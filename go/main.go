@@ -4,7 +4,6 @@ import (
 	crand "crypto/rand"
 	"encoding/json"
 	"fmt"
-	"log"
 	"log/slog"
 	"net"
 	"net/http"
@@ -17,15 +16,14 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-sql-driver/mysql"
 	"github.com/jmoiron/sqlx"
-	"github.com/kaz/pprotein/integration/standalone"
 )
 
 var db *sqlx.DB
 
 func main() {
-	go func() {
-		standalone.Integrate(":19001")
-	}()
+	// go func() {
+	// 	standalone.Integrate(":19001")
+	// }()
 	mux := setup()
 	slog.Info("Listening on :8080")
 	http.ListenAndServe(":8080", mux)
@@ -72,8 +70,11 @@ func setup() http.Handler {
 	}
 	db = _db
 
+	db.SetMaxOpenConns(64)
+	db.SetMaxIdleConns(64)
+
 	mux := chi.NewRouter()
-	mux.Use(middleware.Logger)
+	// mux.Use(middleware.Logger)
 	mux.Use(middleware.Recoverer)
 	mux.HandleFunc("POST /api/initialize", postInitialize)
 
@@ -144,12 +145,13 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	go func() {
-		if _, err := http.Get("http://192.168.0.14:9000/api/group/collect"); err != nil {
-			log.Printf("failed to communicate with pprotein: %v", err)
-		}
-	}()
+	// go func() {
+	// 	if _, err := http.Get("http://192.168.0.14:9000/api/group/collect"); err != nil {
+	// 		log.Printf("failed to communicate with pprotein: %v", err)
+	// 	}
+	// }()
 	LatestRideStatusCache = sync.Map{}
+	LatestRideCache = sync.Map{}
 	writeJSON(w, http.StatusOK, postInitializeResponse{Language: "go"})
 }
 
