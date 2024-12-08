@@ -314,12 +314,12 @@ func getLatestRideByChairID(ctx context.Context, tx *sqlx.Tx, chairID string) (R
 	if ride, ok := LatestRideCache.Load(chairID); ok {
 		return ride.(Ride), nil
 	}
-	ride := Ride{}
+	ride := &Ride{}
 	if err := tx.GetContext(ctx, ride, `SELECT * FROM rides WHERE chair_id = ? ORDER BY updated_at DESC LIMIT 1`, chairID); err != nil {
 		return Ride{}, err
 	}
-	LatestRideCache.Store(chairID, ride)
-	return ride, nil
+	LatestRideCache.Store(chairID, *ride)
+	return *ride, nil
 }
 
 func appPostRides(w http.ResponseWriter, r *http.Request) {
@@ -585,7 +585,10 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, errors.New("not arrived yet"))
 		return
 	}
-
+	if ride.ChairID.Valid {
+		LatestRideCache.Delete(ride.ChairID.String)
+		// lazyDo2, _ = storeRideTx(ctx, tx, ride.ChairID.String)
+	}
 	result, err := tx.ExecContext(
 		ctx,
 		`UPDATE rides SET evaluation = ? WHERE id = ?`,
@@ -594,7 +597,8 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	lazyDo2 = func() { LatestRideCache.Delete(ride.ChairID) }
+	// lazyDo2 = func() { LatestRideCache.Delete(ride.ChairID) }
+
 	if count, err := result.RowsAffected(); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
@@ -919,11 +923,11 @@ func appGetNearbyChairs(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 
-	chairs := []Chair{}
+	activeChairs := []Chair{}
 	err = tx.SelectContext(
 		ctx,
-		&chairs,
-		`SELECT * FROM chairs`,
+		&activeChairs,
+		`SELECT * FROM chairs WHERE is_active = 1`,
 	)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
@@ -931,10 +935,10 @@ func appGetNearbyChairs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	nearbyChairs := []appGetNearbyChairsResponseChair{}
-	for _, chair := range chairs {
-		if !chair.IsActive {
-			continue
-		}
+	for _, chair := range activeChairs {
+		// if !chair.IsActive {
+		// 	continue
+		// }
 
 		rides := []*Ride{}
 		if err := tx.SelectContext(ctx, &rides, `SELECT * FROM rides WHERE chair_id = ? ORDER BY created_at DESC`, chair.ID); err != nil {
