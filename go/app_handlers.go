@@ -286,6 +286,7 @@ type executableGet interface {
 
 var (
 	LatestRideStatusCache = sync.Map{}
+	LatestRideCache       = sync.Map{}
 )
 
 func getLatestRideStatus(ctx context.Context, tx executableGet, rideID string) (string, error) {
@@ -307,6 +308,18 @@ func createRideStatus(ctx context.Context, tx *sqlx.Tx, rideID, status string) (
 	)
 	lazyDo := func() { LatestRideStatusCache.Store(rideID, status) }
 	return lazyDo, err
+}
+
+func getLatestRideByChairID(ctx context.Context, tx *sqlx.Tx, chairID string) (Ride, error) {
+	if ride, ok := LatestRideCache.Load(chairID); ok {
+		return ride.(Ride), nil
+	}
+	ride := Ride{}
+	if err := tx.GetContext(ctx, ride, `SELECT * FROM rides WHERE chair_id = ? ORDER BY updated_at DESC LIMIT 1`, chairID); err != nil {
+		return Ride{}, err
+	}
+	LatestRideCache.Store(chairID, ride)
+	return ride, nil
 }
 
 func appPostRides(w http.ResponseWriter, r *http.Request) {
@@ -534,6 +547,7 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	rideID := r.PathValue("ride_id")
 	lazyDo := func() {}
+	lazyDo2 := func() {}
 
 	req := &appPostRideEvaluationRequest{}
 	if err := bindJSON(r, req); err != nil {
@@ -580,6 +594,7 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+	lazyDo2 = func() { LatestRideCache.Delete(ride.ChairID) }
 	if count, err := result.RowsAffected(); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
@@ -656,6 +671,7 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	lazyDo()
+	lazyDo2()
 
 	writeJSON(w, http.StatusOK, &appPostRideEvaluationResponse{
 		CompletedAt: ride.UpdatedAt.UnixMilli(),

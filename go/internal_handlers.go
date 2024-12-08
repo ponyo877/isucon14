@@ -48,6 +48,7 @@ func internalGetMatching(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+	LatestRideCache.Delete(ride.ChairID)
 
 	w.WriteHeader(http.StatusNoContent)
 }
