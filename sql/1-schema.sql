@@ -47,7 +47,8 @@ CREATE TABLE chair_locations
   longitude  INTEGER     NOT NULL COMMENT '緯度',
   created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '登録日時',
   PRIMARY KEY (id),
-  INDEX idx_chair_id_updated_at_desc (chair_id, created_at DESC)
+  INDEX idx_chair_id_updated_at_desc (chair_id, created_at DESC),
+  distance INTEGER GENERATED ALWAYS AS (ABS(latitude - LAG(latitude) OVER (PARTITION BY chair_id ORDER BY created_at)) + ABS(longitude - LAG(longitude) OVER (PARTITION BY chair_id ORDER BY created_at))) STORED
 )
   COMMENT = '椅子の現在位置情報テーブル';
 
@@ -73,7 +74,7 @@ CREATE TABLE users
 DROP TABLE IF EXISTS payment_tokens;
 CREATE TABLE payment_tokens
 (
-  user_id    VARCHAR(26)  NOT NULL COMMENT 'ユーザーID',
+  user_id    VARCHAR(26)  NOT NULL COMMENT 'ユーザ��ID',
   token      VARCHAR(255) NOT NULL COMMENT '決済トークン',
   created_at DATETIME(6)  NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '登録日時',
   PRIMARY KEY (user_id),
