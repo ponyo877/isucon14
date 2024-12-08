@@ -215,12 +215,12 @@ LEFT JOIN (
                        cll.created_at,
                        ABS(cll.latitude - LAG(cll.latitude) OVER (PARTITION BY cll.chair_id ORDER BY cll.created_at)) +
                        ABS(cll.longitude - LAG(cll.longitude) OVER (PARTITION BY cll.chair_id ORDER BY cll.created_at)) AS distance
-            FROM chair_locations cll LEFT JOIN chairs cc on cll.chair_id = cc.id where cc.owner_id = '01JEJ5Y002JBV1JC5Y7XF382XR'
+            FROM chair_locations cll LEFT JOIN chairs cc on cll.chair_id = cc.id where cc.owner_id = ?
     ) cl
 	GROUP BY cl.chair_id
 ) dt ON dt.chair_id = c.id
 WHERE c.owner_id = ?
-`, owner.ID); err != nil {
+`, owner.ID, owner.ID); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
