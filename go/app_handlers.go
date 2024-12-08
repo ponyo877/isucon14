@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/jmoiron/sqlx"
@@ -283,7 +284,14 @@ type executableGet interface {
 	GetContext(ctx context.Context, dest interface{}, query string, args ...interface{}) error
 }
 
+var (
+	LatestRideStatusCache = sync.Map{}
+)
+
 func getLatestRideStatus(ctx context.Context, tx executableGet, rideID string) (string, error) {
+	if status, ok := LatestRideStatusCache.Load(rideID); ok {
+		return status.(string), nil
+	}
 	status := ""
 	if err := tx.GetContext(ctx, &status, `SELECT status FROM ride_statuses WHERE ride_id = ? ORDER BY created_at DESC LIMIT 1`, rideID); err != nil {
 		return "", err
@@ -291,9 +299,20 @@ func getLatestRideStatus(ctx context.Context, tx executableGet, rideID string) (
 	return status, nil
 }
 
+func createRideStatus(ctx context.Context, tx *sqlx.Tx, rideID, status string) (func(), error) {
+	_, err := tx.ExecContext(
+		ctx,
+		`INSERT INTO ride_statuses (id, ride_id, status) VALUES (?, ?, ?)`,
+		ulid.Make().String(), rideID, status,
+	)
+	lazyDo := func() { LatestRideStatusCache.Store(rideID, status) }
+	return lazyDo, err
+}
+
 func appPostRides(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	req := &appPostRidesRequest{}
+	lazyDo := func() {}
 	if err := bindJSON(r, req); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
@@ -346,11 +365,16 @@ func appPostRides(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := tx.ExecContext(
-		ctx,
-		`INSERT INTO ride_statuses (id, ride_id, status) VALUES (?, ?, ?)`,
-		ulid.Make().String(), rideID, "MATCHING",
-	); err != nil {
+	// if _, err := tx.ExecContext(
+	// 	ctx,
+	// 	`INSERT INTO ride_statuses (id, ride_id, status) VALUES (?, ?, ?)`,
+	// 	ulid.Make().String(), rideID, "MATCHING",
+	// ); err != nil {
+	// 	writeError(w, http.StatusInternalServerError, err)
+	// 	return
+	// }
+	lazyDo, err = createRideStatus(ctx, tx, rideID, "MATCHING")
+	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
@@ -431,6 +455,7 @@ func appPostRides(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+	lazyDo()
 
 	writeJSON(w, http.StatusAccepted, &appPostRidesResponse{
 		RideID: rideID,
@@ -508,6 +533,7 @@ type appPostRideEvaluationResponse struct {
 func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	rideID := r.PathValue("ride_id")
+	lazyDo := func() {}
 
 	req := &appPostRideEvaluationRequest{}
 	if err := bindJSON(r, req); err != nil {
@@ -562,10 +588,15 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err = tx.ExecContext(
-		ctx,
-		`INSERT INTO ride_statuses (id, ride_id, status) VALUES (?, ?, ?)`,
-		ulid.Make().String(), rideID, "COMPLETED")
+	// _, err = tx.ExecContext(
+	// 	ctx,
+	// 	`INSERT INTO ride_statuses (id, ride_id, status) VALUES (?, ?, ?)`,
+	// 	ulid.Make().String(), rideID, "COMPLETED")
+	// if err != nil {
+	// 	writeError(w, http.StatusInternalServerError, err)
+	// 	return
+	// }
+	lazyDo, err = createRideStatus(ctx, tx, rideID, "COMPLETED")
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
@@ -624,6 +655,7 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+	lazyDo()
 
 	writeJSON(w, http.StatusOK, &appPostRideEvaluationResponse{
 		CompletedAt: ride.UpdatedAt.UnixMilli(),
