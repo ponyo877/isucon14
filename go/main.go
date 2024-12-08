@@ -23,7 +23,7 @@ var db *sqlx.DB
 
 func main() {
 	go func() {
-		standalone.Integrate(":19000")
+		standalone.Integrate(":19001")
 	}()
 	mux := setup()
 	slog.Info("Listening on :8080")
