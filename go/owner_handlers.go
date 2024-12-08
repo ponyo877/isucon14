@@ -210,13 +210,13 @@ LEFT JOIN (
 	SELECT cl.chair_id,
 		   SUM(COALESCE(cl.distance, 0)) AS total_distance,
 		   MAX(cl.created_at) AS total_distance_updated_at
-	FROM (
-		SELECT chair_id,
-			   created_at,
-			   ABS(latitude - LAG(latitude) OVER (PARTITION BY chair_id ORDER BY created_at)) +
-			   ABS(longitude - LAG(longitude) OVER (PARTITION BY chair_id ORDER BY created_at)) AS distance
-		FROM chair_locations
-	) cl
+    FROM (
+            SELECT chair_id,
+                       cll.created_at,
+                       ABS(cll.latitude - LAG(cll.latitude) OVER (PARTITION BY cll.chair_id ORDER BY cll.created_at)) +
+                       ABS(cll.longitude - LAG(cll.longitude) OVER (PARTITION BY cll.chair_id ORDER BY cll.created_at)) AS distance
+            FROM chair_locations cll LEFT JOIN chairs cc on cll.chair_id = cc.id where cc.owner_id = '01JEJ5Y002JBV1JC5Y7XF382XR'
+    ) cl
 	GROUP BY cl.chair_id
 ) dt ON dt.chair_id = c.id
 WHERE c.owner_id = ?
