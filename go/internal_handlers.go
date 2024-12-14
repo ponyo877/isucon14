@@ -25,7 +25,6 @@ func internalGetMatching(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	fmt.Printf("[DEBUG] waiting rides count: %d\n", cnt)
 
 	// matched := &Chair{}
 	// empty := false
@@ -51,50 +50,30 @@ func internalGetMatching(w http.ResponseWriter, r *http.Request) {
 	// 	return
 	// }
 	var chairID string
-	if err := db.GetContext(ctx, &chairID, fmt.Sprintf(`select
-		    uc.cid
-		from
-		    (
-		        select
-		            ac.cid cid
-		        from
-		            ride_statuses rs
-		            join
-		                (
-		                    select
-		                        r.id rid,
-		                        c.id cid
-		                    from
-		                        rides r
-		                        join
-		                            chairs c
-		                        on  r.chair_id = c.id
-		                    where
-		                        c.is_active = TRUE
-		                ) AS ac
-		            on  rs.ride_id = ac.rid
-		        group by
-		            ac.cid
-		        having (count(rs.chair_sent_at) %% 6 = 0)
-				UNION ALL SELECT c.id AS chair_id FROM chairs c LEFT JOIN rides r ON c.id = r.chair_id WHERE r.chair_id IS NULL
-		    ) AS uc
-		    join
-		        chair_locations cl
-		    on  uc.cid = cl.chair_id
-		order by
-		    (abs(cl.latitude - %d) + abs(cl.longitude - %d))
-		LIMIT 1`, ride.PickupLatitude, ride.PickupLongitude)); err != nil {
+	if err := db.GetContext(ctx, &chairID, fmt.Sprintf(`
+		select c.id
+		from chairs c
+		join chair_locations cl
+		on  c.id = cl.chair_id
+		and c.is_completed = 1
+		and c.is_active = 1
+		order by (abs(cl.latitude - %d) + abs(cl.longitude - %d)) LIMIT 1`, ride.PickupLatitude, ride.PickupLongitude)); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
 	// 上で防いでいるはずなのに入れないと「椅子がライドの完了通知を受け取る前に、別の新しいライドの通知を受け取りました 」になるから追加
-	empty := false
-	if err := db.GetContext(ctx, &empty, "SELECT COUNT(*) = 0 FROM (SELECT COUNT(chair_sent_at) = 6 AS completed FROM ride_statuses WHERE ride_id IN (SELECT id FROM rides WHERE chair_id = ?) GROUP BY ride_id) is_completed WHERE completed = FALSE", chairID); err != nil {
+	// empty := false
+	// if err := db.GetContext(ctx, &empty, "SELECT COUNT(*) = 0 FROM (SELECT COUNT(chair_sent_at) = 6 AS completed FROM ride_statuses WHERE ride_id IN (SELECT id FROM rides WHERE chair_id = ?) GROUP BY ride_id) is_completed WHERE completed = FALSE", chairID); err != nil {
+	// 	writeError(w, http.StatusInternalServerError, err)
+	// 	return
+	// }
+	// fmt.Printf("[DEBUG] empty: %v, chair_id: %s, ride.ID: %s\n", empty, chairID, ride.ID)
+	// if !empty {
+	// 	w.WriteHeader(http.StatusNoContent)
+	// 	return
+	// }
+	if _, err := db.ExecContext(ctx, "UPDATE chairs SET is_completed = 0 WHERE id = ?", chairID); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-	if !empty {
-		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 	if _, err := db.ExecContext(ctx, "UPDATE rides SET chair_id = ? WHERE id = ?", chairID, ride.ID); err != nil {

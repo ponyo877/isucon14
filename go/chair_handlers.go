@@ -275,6 +275,12 @@ func chairGetNotification(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
+		if yetSentRideStatus.Status == "COMPLETED" {
+			if _, err = db.ExecContext(ctx, "UPDATE chairs SET is_completed = 1 WHERE id = ?", ride.ChairID.String); err != nil {
+				writeError(w, http.StatusInternalServerError, err)
+				return
+			}
+		}
 	}
 
 	if err := tx.Commit(); err != nil {
