@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/oklog/ulid/v2"
 )
@@ -104,6 +105,7 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 
 	chair := ctx.Value("chair").(*Chair)
 	lazyDo := func() {}
+	lazyDo2 := func() {}
 
 	tx, err := db.Beginx()
 	if err != nil {
@@ -113,11 +115,14 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback()
 
 	chairLocationID := ulid.Make().String()
-	if _, err := tx.ExecContext(
-		ctx,
-		`INSERT INTO chair_locations (id, chair_id, latitude, longitude) VALUES (?, ?, ?, ?)`,
-		chairLocationID, chair.ID, req.Latitude, req.Longitude,
-	); err != nil {
+	// if _, err := tx.ExecContext(
+	// 	ctx,
+	// 	`INSERT INTO chair_locations (id, chair_id, latitude, longitude) VALUES (?, ?, ?, ?)`,
+	// 	chairLocationID, chair.ID, req.Latitude, req.Longitude,
+	// );
+	now := time.Now()
+	lazyDo2, err = createChairLoc(ctx, tx, chairLocationID, chair.ID, req.Latitude, req.Longitude, now)
+	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
@@ -127,6 +132,7 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 		ChairID:   chair.ID,
 		Latitude:  req.Latitude,
 		Longitude: req.Longitude,
+		CreatedAt: now,
 	}
 	// if err := tx.GetContext(ctx, location, `SELECT * FROM chair_locations WHERE id = ?`, chairLocationID); err != nil {
 	// 	writeError(w, http.StatusInternalServerError, err)
@@ -186,6 +192,7 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	lazyDo()
+	lazyDo2()
 
 	writeJSON(w, http.StatusOK, &chairPostCoordinateResponse{
 		RecordedAt: location.CreatedAt.UnixMilli(),
@@ -227,7 +234,7 @@ func chairGetNotification(w http.ResponseWriter, r *http.Request) {
 	if err := tx.GetContext(ctx, ride, `SELECT * FROM rides WHERE chair_id = ? ORDER BY updated_at DESC LIMIT 1`, chair.ID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			writeJSON(w, http.StatusOK, &chairGetNotificationResponse{
-				RetryAfterMs: 500,
+				RetryAfterMs: 250,
 			})
 			return
 		}
@@ -239,7 +246,7 @@ func chairGetNotification(w http.ResponseWriter, r *http.Request) {
 	// if err != nil {
 	// 	if errors.Is(err, sql.ErrNoRows) {
 	// 		writeJSON(w, http.StatusOK, &chairGetNotificationResponse{
-	// 			RetryAfterMs: 500,
+	// 			RetryAfterMs: 250,
 	// 		})
 	// 		return
 	// 	}
@@ -305,7 +312,7 @@ func chairGetNotification(w http.ResponseWriter, r *http.Request) {
 			},
 			Status: status,
 		},
-		RetryAfterMs: 500,
+		RetryAfterMs: 250,
 	})
 }
 

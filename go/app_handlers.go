@@ -287,7 +287,13 @@ type executableGet interface {
 var (
 	LatestRideStatusCache = sync.Map{}
 	LatestRideCache       = sync.Map{}
+	LatestChairLoc        = sync.Map{}
 )
+
+type Loc struct {
+	Latitude  int
+	Longitude int
+}
 
 func getLatestRideStatus(ctx context.Context, tx executableGet, rideID string) (string, error) {
 	if status, ok := LatestRideStatusCache.Load(rideID); ok {
@@ -320,6 +326,31 @@ func getLatestRideByChairID(ctx context.Context, tx *sqlx.Tx, chairID string) (R
 	}
 	LatestRideCache.Store(chairID, *ride)
 	return *ride, nil
+}
+
+func createChairLoc(ctx context.Context, tx *sqlx.Tx, id, chairID string, latitude, longitude int, now time.Time) (func(), error) {
+	_, err := tx.ExecContext(
+		ctx,
+		`INSERT INTO chair_locations (id, chair_id, latitude, longitude, created_at) VALUES (?, ?, ?, ?, ?)`,
+		id, chairID, latitude, longitude, now,
+	)
+	lazyDo := func() {
+		LatestChairLoc.Store(chairID, ChairLocation{
+			ID:        id,
+			ChairID:   chairID,
+			Latitude:  latitude,
+			Longitude: longitude,
+			CreatedAt: now,
+		})
+	}
+	return lazyDo, err
+}
+
+func getLatestChairLoc(chairID string) ChairLocation {
+	if loc, ok := LatestChairLoc.Load(chairID); ok {
+		return loc.(ChairLocation)
+	}
+	return ChairLocation{}
 }
 
 func appPostRides(w http.ResponseWriter, r *http.Request) {
@@ -725,7 +756,7 @@ func appGetNotification(w http.ResponseWriter, r *http.Request) {
 	if err := tx.GetContext(ctx, ride, `SELECT * FROM rides WHERE user_id = ? ORDER BY created_at DESC LIMIT 1`, user.ID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			writeJSON(w, http.StatusOK, &appGetNotificationResponse{
-				RetryAfterMs: 500,
+				RetryAfterMs: 250,
 			})
 			return
 		}
@@ -772,7 +803,7 @@ func appGetNotification(w http.ResponseWriter, r *http.Request) {
 			CreatedAt: ride.CreatedAt.UnixMilli(),
 			UpdateAt:  ride.UpdatedAt.UnixMilli(),
 		},
-		RetryAfterMs: 500,
+		RetryAfterMs: 250,
 	}
 
 	if ride.ChairID.Valid {
