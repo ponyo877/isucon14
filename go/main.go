@@ -154,6 +154,16 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 	}()
 	LatestRideStatusCache = sync.Map{}
 	LatestRideCache = sync.Map{}
+	LatestChairLoc = sync.Map{}
+
+	chairLocations := []ChairLocation{}
+	if err := db.SelectContext(ctx, &chairLocations, "SELECT * FROM chair_locations ORDER BY created_at"); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	for _, cl := range chairLocations {
+		LatestChairLoc.Store(cl.ChairID, cl)
+	}
 	writeJSON(w, http.StatusOK, postInitializeResponse{Language: "go"})
 }
 
