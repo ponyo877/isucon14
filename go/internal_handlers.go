@@ -5,14 +5,21 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
+	"time"
 
 	mcf "github.com/isucon/isucon14/webapp/go/mincostflow"
 )
 
 var mu sync.Mutex
 
+type MatchPair struct {
+	chairID string
+	rideID  string
+}
+
 // このAPIをインスタンス内から一定間隔で叩かせることで、椅子とライドをマッチングさせる
 func internalGetMatching(w http.ResponseWriter, r *http.Request) {
+	st := time.Now()
 	// 複数スレッドで同時実行されないように排他制御
 	if !mu.TryLock() {
 		w.WriteHeader(http.StatusNoContent)
@@ -40,7 +47,7 @@ func internalGetMatching(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-
+	p1 := float32(time.Since(st).Milliseconds()) / 1000.0
 	// matched := &Chair{}
 	// empty := false
 	// for i := 0; i < 10; i++ {
@@ -78,61 +85,82 @@ func internalGetMatching(w http.ResponseWriter, r *http.Request) {
 	// 	return
 	// }
 	// TODO: chair_locationsの扱いが間違っているので、chairs TBLに最新の緯度経度をキャッシュして改善する
-	cLocs := []ChairLocation{}
-	if err := db.SelectContext(ctx, &cLocs, `
-		select cl.*
-		from chairs c
-		join chair_locations cl
-		on  c.id = cl.chair_id
-		and c.is_completed = 1
-		and c.is_active = 1`); err != nil {
+	var chairs []Chair
+	if err := db.SelectContext(ctx, &chairs, `
+		select *
+		from chairs
+		where is_completed = 1
+		and   is_active = 1`); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	fmt.Printf("[DEBUG] chairs count: %v\n", len(cLocs))
-	if len(cLocs) == 0 {
+	fmt.Printf("[DEBUG] chairs count: %v\n", len(chairs))
+	if len(chairs) == 0 {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	n := len(rides) + len(cLocs) + 2
+	p2 := float32(time.Since(st).Milliseconds()) / 1000.0
+	n := len(rides) + len(chairs) + 2
 	// 最小費用流
 	mcf := mcf.NewMinCostFlow(n)
 
 	// source -> chair
-	for i, _ := range cLocs {
+	for i, _ := range chairs {
 		mcf.AddEdge(0, i+1, 1, 0)
 	}
 
 	// chair -> ride
-	for i, c := range cLocs {
+	for i, c := range chairs {
 		for j, r := range rides {
-			distance := abs(c.Latitude-r.PickupLatitude) + abs(c.Longitude-r.PickupLongitude)
-			mcf.AddEdge(i+1, len(cLocs)+j+1, 1, distance)
+			cLoc := getLatestChairLoc(c.ID)
+			distance := abs(cLoc.Latitude-r.PickupLatitude) + abs(cLoc.Longitude-r.PickupLongitude)
+			mcf.AddEdge(i+1, len(chairs)+j+1, 1, distance)
 		}
 	}
 
 	// ride -> sink
 	for j, _ := range rides {
-		mcf.AddEdge(len(cLocs)+j+1, n-1, 1, 0)
+		mcf.AddEdge(len(chairs)+j+1, n-1, 1, 0)
 	}
-
+	p3 := float32(time.Since(st).Milliseconds()) / 1000.0
 	// calc min path
-	mcf.FlowL(0, n-1, mcf.Min(len(cLocs), len(rides)))
-
+	mcf.FlowL(0, n-1, mcf.Min(len(chairs), len(rides)))
+	p4 := float32(time.Since(st).Milliseconds()) / 1000.0
 	// match
+	matchPair := []MatchPair{}
 	for _, e := range mcf.Edges() {
 		// 流量のあるEdgeだけを見る(source, sinkは除く)
 		if e.Flow() == 0 || e.From() == 0 || e.To() == n-1 {
 			continue
 		}
-		chairID := cLocs[e.From()-1].ChairID
-		rideID := rides[e.To()-len(cLocs)-1].ID
-		if err := match(ctx, chairID, rideID); err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
+		chairID := chairs[e.From()-1].ID
+		rideID := rides[e.To()-len(chairs)-1].ID
+		// if err := match(ctx, chairID, rideID); err != nil {
+		// 	writeError(w, http.StatusInternalServerError, err)
+		// 	return
+		// }
+		matchPair = append(matchPair, MatchPair{chairID, rideID})
 	}
-
+	var chairIDsComma, rideIDsComma string
+	for i, mp := range matchPair {
+		if i > 0 {
+			chairIDsComma += ","
+			rideIDsComma += ","
+		}
+		chairIDsComma += fmt.Sprintf("'%s'", mp.chairID)
+		rideIDsComma += fmt.Sprintf("'%s'", mp.rideID)
+		LatestRideCache.Delete(mp.chairID)
+	}
+	if _, err := db.ExecContext(ctx, fmt.Sprintf("UPDATE chairs SET is_completed = 0 WHERE id IN (%s)", chairIDsComma)); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	// UPDATE users SET address = ELT(FIELD(id, 2, 5, 6), '大阪', '愛知', '北海道') WHERE id IN (2, 5, 6);
+	if _, err := db.ExecContext(ctx, fmt.Sprintf("UPDATE rides SET chair_id = ELT(FIELD(id, %s), %s) WHERE id IN (%s)", rideIDsComma, chairIDsComma, rideIDsComma)); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	p5 := float32(time.Since(st).Milliseconds()) / 1000.0
 	// 上で防いでいるはずなのに入れないと「椅子がライドの完了通知を受け取る前に、別の新しいライドの通知を受け取りました 」になるから追加
 	// empty := false
 	// if err := db.GetContext(ctx, &empty, "SELECT COUNT(*) = 0 FROM (SELECT COUNT(chair_sent_at) = 6 AS completed FROM ride_statuses WHERE ride_id IN (SELECT id FROM rides WHERE chair_id = ?) GROUP BY ride_id) is_completed WHERE completed = FALSE", chairID); err != nil {
@@ -153,7 +181,7 @@ func internalGetMatching(w http.ResponseWriter, r *http.Request) {
 	// 	return
 	// }
 	// LatestRideCache.Delete(ride.ChairID)
-
+	fmt.Printf("[DEBUG2] internalGetMatching: %.2f, %.2f, %.2f, %.2f, %.2f\n", p1, p2, p3, p4, p5)
 	w.WriteHeader(http.StatusNoContent)
 }
 
