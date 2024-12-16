@@ -324,16 +324,14 @@ func createRideStatus(ctx context.Context, tx *sqlx.Tx, ride *Ride, status strin
 	)
 	lazyDo := func() {
 		LatestRideStatusCache.Store(ride.ID, status)
-		// fmt.Printf("[DEBUG3] appGetNotification -1\n")
-		// if _, ok := UserNotiChan[ride.UserID]; !ok {
-		// 	UserNotiChan[ride.UserID] = make(chan UserNoti, 10)
-		// }
-		// UserNotiChan[ride.UserID] <- UserNoti{
-		// 	Ride:         ride,
-		// 	RideStatusID: id,
-		// 	RideStatus:   status,
-		// }
-		// fmt.Printf("[DEBUG3] appGetNotification 00\n")
+		if _, ok := UserNotiChan[ride.UserID]; !ok {
+			UserNotiChan[ride.UserID] = make(chan UserNoti, 2)
+		}
+		UserNotiChan[ride.UserID] <- UserNoti{
+			Ride:         ride,
+			RideStatusID: id,
+			RideStatus:   status,
+		}
 	}
 
 	return lazyDo, err
@@ -774,6 +772,7 @@ type appGetNotificationResponseChairStats struct {
 	TotalEvaluationAvg float64 `json:"total_evaluation_avg"`
 }
 
+// SSE
 func appGetNotification(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	user := ctx.Value("user").(*User)
@@ -785,15 +784,13 @@ func appGetNotification(w http.ResponseWriter, r *http.Request) {
 
 	clientGone := ctx.Done()
 	rc := http.NewResponseController(w)
-	t := time.NewTicker(time.Second)
-	defer t.Stop()
 	for {
 		select {
 		case <-clientGone:
 			fmt.Println("Client disconnected")
 			return
-		case <-t.C:
-			response, err := getNotification(ctx, user)
+		case noti := <-UserNotiChan[user.ID]:
+			response, err := getNotification(ctx, user, noti.Ride, noti.RideStatusID, noti.RideStatus)
 			if err != nil {
 				return
 			}
@@ -814,7 +811,7 @@ func appGetNotification(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func getNotification(ctx context.Context, user *User) (*appGetNotificationResponse, error) {
+func getNotification(ctx context.Context, user *User, ride *Ride, rideStatusID, rideStatus string) (*appGetNotificationResponse, error) {
 	tx, err := db.Beginx()
 	if err != nil {
 		// writeError(w, http.StatusInternalServerError, err)
@@ -822,36 +819,36 @@ func getNotification(ctx context.Context, user *User) (*appGetNotificationRespon
 	}
 	defer tx.Rollback()
 
-	ride := &Ride{}
-	if err := tx.GetContext(ctx, ride, `SELECT * FROM rides WHERE user_id = ? ORDER BY created_at DESC LIMIT 1`, user.ID); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			// writeJSON(w, http.StatusOK, &appGetNotificationResponse{
-			// 	RetryAfterMs: 250,
-			// })
-			return &appGetNotificationResponse{
-				RetryAfterMs: 250,
-			}, nil
-		}
-		// writeError(w, http.StatusInternalServerError, err)
-		return nil, err
-	}
+	// ride := &Ride{}
+	// if err := tx.GetContext(ctx, ride, `SELECT * FROM rides WHERE user_id = ? ORDER BY created_at DESC LIMIT 1`, user.ID); err != nil {
+	// 	if errors.Is(err, sql.ErrNoRows) {
+	// 		// writeJSON(w, http.StatusOK, &appGetNotificationResponse{
+	// 		// 	RetryAfterMs: 250,
+	// 		// })
+	// 		return &appGetNotificationResponse{
+	// 			RetryAfterMs: 250,
+	// 		}, nil
+	// 	}
+	// 	// writeError(w, http.StatusInternalServerError, err)
+	// 	return nil, err
+	// }
 
-	yetSentRideStatus := RideStatus{}
-	status := ""
-	if err := tx.GetContext(ctx, &yetSentRideStatus, `SELECT * FROM ride_statuses WHERE ride_id = ? AND app_sent_at IS NULL ORDER BY created_at ASC LIMIT 1`, ride.ID); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			status, err = getLatestRideStatus(ctx, tx, ride.ID)
-			if err != nil {
-				// writeError(w, http.StatusInternalServerError, err)
-				return nil, err
-			}
-		} else {
-			// writeError(w, http.StatusInternalServerError, err)
-			return nil, err
-		}
-	} else {
-		status = yetSentRideStatus.Status
-	}
+	// yetSentRideStatus := RideStatus{}
+	// status := ""
+	// if err := tx.GetContext(ctx, &yetSentRideStatus, `SELECT * FROM ride_statuses WHERE ride_id = ? AND app_sent_at IS NULL ORDER BY created_at ASC LIMIT 1`, ride.ID); err != nil {
+	// 	if errors.Is(err, sql.ErrNoRows) {
+	// 		status, err = getLatestRideStatus(ctx, tx, ride.ID)
+	// 		if err != nil {
+	// 			// writeError(w, http.StatusInternalServerError, err)
+	// 			return nil, err
+	// 		}
+	// 	} else {
+	// 		// writeError(w, http.StatusInternalServerError, err)
+	// 		return nil, err
+	// 	}
+	// } else {
+	// 	status = yetSentRideStatus.Status
+	// }
 
 	fare, err := calculateDiscountedFare(ctx, tx, user.ID, ride, ride.PickupLatitude, ride.PickupLongitude, ride.DestinationLatitude, ride.DestinationLongitude)
 	if err != nil {
@@ -871,7 +868,7 @@ func getNotification(ctx context.Context, user *User) (*appGetNotificationRespon
 				Longitude: ride.DestinationLongitude,
 			},
 			Fare:      fare,
-			Status:    status,
+			Status:    rideStatus,
 			CreatedAt: ride.CreatedAt.UnixMilli(),
 			UpdateAt:  ride.UpdatedAt.UnixMilli(),
 		},
@@ -899,13 +896,13 @@ func getNotification(ctx context.Context, user *User) (*appGetNotificationRespon
 		}
 	}
 
-	if yetSentRideStatus.ID != "" {
-		_, err := tx.ExecContext(ctx, `UPDATE ride_statuses SET app_sent_at = CURRENT_TIMESTAMP(6) WHERE id = ?`, yetSentRideStatus.ID)
-		if err != nil {
-			// writeError(w, http.StatusInternalServerError, err)
-			return nil, err
-		}
+	// if yetSentRideStatus.ID != "" {
+	_, err = tx.ExecContext(ctx, `UPDATE ride_statuses SET app_sent_at = CURRENT_TIMESTAMP(6) WHERE id = ?`, rideStatusID)
+	if err != nil {
+		// writeError(w, http.StatusInternalServerError, err)
+		return nil, err
 	}
+	// }
 
 	if err := tx.Commit(); err != nil {
 		// writeError(w, http.StatusInternalServerError, err)
