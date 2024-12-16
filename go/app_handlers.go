@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"sync"
@@ -776,23 +778,62 @@ func appGetNotification(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	user := ctx.Value("user").(*User)
 
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	clientGone := ctx.Done()
+	rc := http.NewResponseController(w)
+	t := time.NewTicker(time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-clientGone:
+			fmt.Println("Client disconnected")
+			return
+		case <-t.C:
+			response, err := getNotification(ctx, user)
+			if err != nil {
+				return
+			}
+			resV, err := json.Marshal(response.Data)
+			if err != nil {
+				return
+			}
+			_, err = fmt.Fprintf(w, "data: %s\n\n", string(resV))
+			if err != nil {
+				return
+			}
+			fmt.Printf("[DEBUG3] appGetNotification 02\n")
+			err = rc.Flush()
+			if err != nil {
+				return
+			}
+		}
+	}
+}
+
+func getNotification(ctx context.Context, user *User) (*appGetNotificationResponse, error) {
 	tx, err := db.Beginx()
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
+		// writeError(w, http.StatusInternalServerError, err)
+		return nil, err
 	}
 	defer tx.Rollback()
 
 	ride := &Ride{}
 	if err := tx.GetContext(ctx, ride, `SELECT * FROM rides WHERE user_id = ? ORDER BY created_at DESC LIMIT 1`, user.ID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			writeJSON(w, http.StatusOK, &appGetNotificationResponse{
+			// writeJSON(w, http.StatusOK, &appGetNotificationResponse{
+			// 	RetryAfterMs: 250,
+			// })
+			return &appGetNotificationResponse{
 				RetryAfterMs: 250,
-			})
-			return
+			}, nil
 		}
-		writeError(w, http.StatusInternalServerError, err)
-		return
+		// writeError(w, http.StatusInternalServerError, err)
+		return nil, err
 	}
 
 	yetSentRideStatus := RideStatus{}
@@ -801,12 +842,12 @@ func appGetNotification(w http.ResponseWriter, r *http.Request) {
 		if errors.Is(err, sql.ErrNoRows) {
 			status, err = getLatestRideStatus(ctx, tx, ride.ID)
 			if err != nil {
-				writeError(w, http.StatusInternalServerError, err)
-				return
+				// writeError(w, http.StatusInternalServerError, err)
+				return nil, err
 			}
 		} else {
-			writeError(w, http.StatusInternalServerError, err)
-			return
+			// writeError(w, http.StatusInternalServerError, err)
+			return nil, err
 		}
 	} else {
 		status = yetSentRideStatus.Status
@@ -814,8 +855,8 @@ func appGetNotification(w http.ResponseWriter, r *http.Request) {
 
 	fare, err := calculateDiscountedFare(ctx, tx, user.ID, ride, ride.PickupLatitude, ride.PickupLongitude, ride.DestinationLatitude, ride.DestinationLongitude)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
+		// writeError(w, http.StatusInternalServerError, err)
+		return nil, err
 	}
 
 	response := &appGetNotificationResponse{
@@ -840,14 +881,14 @@ func appGetNotification(w http.ResponseWriter, r *http.Request) {
 	if ride.ChairID.Valid {
 		chair := &Chair{}
 		if err := tx.GetContext(ctx, chair, `SELECT * FROM chairs WHERE id = ?`, ride.ChairID); err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
+			// writeError(w, http.StatusInternalServerError, err)
+			return nil, err
 		}
 
 		stats, err := getChairStats(ctx, tx, chair.ID)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
+			// writeError(w, http.StatusInternalServerError, err)
+			return nil, err
 		}
 
 		response.Data.Chair = &appGetNotificationResponseChair{
@@ -861,17 +902,16 @@ func appGetNotification(w http.ResponseWriter, r *http.Request) {
 	if yetSentRideStatus.ID != "" {
 		_, err := tx.ExecContext(ctx, `UPDATE ride_statuses SET app_sent_at = CURRENT_TIMESTAMP(6) WHERE id = ?`, yetSentRideStatus.ID)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
+			// writeError(w, http.StatusInternalServerError, err)
+			return nil, err
 		}
 	}
 
 	if err := tx.Commit(); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
+		// writeError(w, http.StatusInternalServerError, err)
+		return nil, err
 	}
-
-	writeJSON(w, http.StatusOK, response)
+	return response, nil
 }
 
 func getChairStats(ctx context.Context, tx *sqlx.Tx, chairID string) (appGetNotificationResponseChairStats, error) {
