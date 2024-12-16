@@ -166,7 +166,7 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 				// 	writeError(w, http.StatusInternalServerError, err)
 				// 	return
 				// }
-				lazyDo, err = createRideStatus(ctx, tx, ride.ID, "PICKUP")
+				lazyDo, err = createRideStatus(ctx, tx, ride, "PICKUP")
 				if err != nil {
 					writeError(w, http.StatusInternalServerError, err)
 					return
@@ -178,7 +178,7 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 				// 	writeError(w, http.StatusInternalServerError, err)
 				// 	return
 				// }
-				lazyDo, err = createRideStatus(ctx, tx, ride.ID, "ARRIVED")
+				lazyDo, err = createRideStatus(ctx, tx, ride, "ARRIVED")
 				if err != nil {
 					writeError(w, http.StatusInternalServerError, err)
 					return
@@ -191,8 +191,8 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	lazyDo()
-	lazyDo2()
+	go lazyDo()
+	go lazyDo2()
 
 	writeJSON(w, http.StatusOK, &chairPostCoordinateResponse{
 		RecordedAt: location.CreatedAt.UnixMilli(),
@@ -362,7 +362,7 @@ func chairPostRideStatus(w http.ResponseWriter, r *http.Request) {
 		// 	writeError(w, http.StatusInternalServerError, err)
 		// 	return
 		// }
-		lazyDo, err = createRideStatus(ctx, tx, ride.ID, "ENROUTE")
+		lazyDo, err = createRideStatus(ctx, tx, ride, "ENROUTE")
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
@@ -382,7 +382,7 @@ func chairPostRideStatus(w http.ResponseWriter, r *http.Request) {
 		// 	writeError(w, http.StatusInternalServerError, err)
 		// 	return
 		// }
-		lazyDo, err = createRideStatus(ctx, tx, ride.ID, "CARRYING")
+		lazyDo, err = createRideStatus(ctx, tx, ride, "CARRYING")
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
@@ -395,7 +395,7 @@ func chairPostRideStatus(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	lazyDo()
+	go lazyDo()
 
 	w.WriteHeader(http.StatusNoContent)
 }

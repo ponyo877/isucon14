@@ -284,10 +284,17 @@ type executableGet interface {
 	GetContext(ctx context.Context, dest interface{}, query string, args ...interface{}) error
 }
 
+type UserNoti struct {
+	Ride         *Ride
+	RideStatusID string
+	RideStatus   string
+}
+
 var (
 	LatestRideStatusCache = sync.Map{}
 	LatestRideCache       = sync.Map{}
 	LatestChairLoc        = sync.Map{}
+	UserNotiChan          = make(map[string]chan UserNoti)
 )
 
 type Loc struct {
@@ -306,13 +313,27 @@ func getLatestRideStatus(ctx context.Context, tx executableGet, rideID string) (
 	return status, nil
 }
 
-func createRideStatus(ctx context.Context, tx *sqlx.Tx, rideID, status string) (func(), error) {
+func createRideStatus(ctx context.Context, tx *sqlx.Tx, ride *Ride, status string) (func(), error) {
+	id := ulid.Make().String()
 	_, err := tx.ExecContext(
 		ctx,
 		`INSERT INTO ride_statuses (id, ride_id, status) VALUES (?, ?, ?)`,
-		ulid.Make().String(), rideID, status,
+		id, ride.ID, status,
 	)
-	lazyDo := func() { LatestRideStatusCache.Store(rideID, status) }
+	lazyDo := func() {
+		LatestRideStatusCache.Store(ride.ID, status)
+		// fmt.Printf("[DEBUG3] appGetNotification -1\n")
+		// if _, ok := UserNotiChan[ride.UserID]; !ok {
+		// 	UserNotiChan[ride.UserID] = make(chan UserNoti, 10)
+		// }
+		// UserNotiChan[ride.UserID] <- UserNoti{
+		// 	Ride:         ride,
+		// 	RideStatusID: id,
+		// 	RideStatus:   status,
+		// }
+		// fmt.Printf("[DEBUG3] appGetNotification 00\n")
+	}
+
 	return lazyDo, err
 }
 
@@ -398,12 +419,12 @@ func appPostRides(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, errors.New("ride already exists"))
 		return
 	}
-
+	now := time.Now()
 	if _, err := tx.ExecContext(
 		ctx,
-		`INSERT INTO rides (id, user_id, pickup_latitude, pickup_longitude, destination_latitude, destination_longitude)
-				  VALUES (?, ?, ?, ?, ?, ?)`,
-		rideID, user.ID, req.PickupCoordinate.Latitude, req.PickupCoordinate.Longitude, req.DestinationCoordinate.Latitude, req.DestinationCoordinate.Longitude,
+		`INSERT INTO rides (id, user_id, pickup_latitude, pickup_longitude, destination_latitude, destination_longitude, created_at, updated_at)
+				  VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		rideID, user.ID, req.PickupCoordinate.Latitude, req.PickupCoordinate.Longitude, req.DestinationCoordinate.Latitude, req.DestinationCoordinate.Longitude, now, now,
 	); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
@@ -417,7 +438,17 @@ func appPostRides(w http.ResponseWriter, r *http.Request) {
 	// 	writeError(w, http.StatusInternalServerError, err)
 	// 	return
 	// }
-	lazyDo, err = createRideStatus(ctx, tx, rideID, "MATCHING")
+	tmpRide := &Ride{
+		ID:                   rideID,
+		UserID:               user.ID,
+		PickupLatitude:       req.PickupCoordinate.Latitude,
+		PickupLongitude:      req.PickupCoordinate.Longitude,
+		DestinationLatitude:  req.DestinationCoordinate.Latitude,
+		DestinationLongitude: req.DestinationCoordinate.Longitude,
+		CreatedAt:            now,
+		UpdatedAt:            now,
+	}
+	lazyDo, err = createRideStatus(ctx, tx, tmpRide, "MATCHING")
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
@@ -499,7 +530,7 @@ func appPostRides(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	lazyDo()
+	go lazyDo()
 
 	writeJSON(w, http.StatusAccepted, &appPostRidesResponse{
 		RideID: rideID,
@@ -646,7 +677,7 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 	// 	writeError(w, http.StatusInternalServerError, err)
 	// 	return
 	// }
-	lazyDo, err = createRideStatus(ctx, tx, rideID, "COMPLETED")
+	lazyDo, err = createRideStatus(ctx, tx, ride, "COMPLETED")
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
@@ -705,8 +736,8 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	lazyDo()
-	lazyDo2()
+	go lazyDo()
+	go lazyDo2()
 
 	writeJSON(w, http.StatusOK, &appPostRideEvaluationResponse{
 		CompletedAt: ride.UpdatedAt.UnixMilli(),
