@@ -37,17 +37,32 @@ func internalGetMatching(w http.ResponseWriter, r *http.Request) {
 	// 	writeError(w, http.StatusInternalServerError, err)
 	// 	return
 	// }
-	rides := []Ride{}
-	if err := db.SelectContext(ctx, &rides, "SELECT * FROM rides WHERE chair_id IS NULL"); err != nil {
+	var chairs []Chair
+	if err := db.SelectContext(ctx, &chairs, `
+		select *
+		from chairs
+		where is_completed = 1
+		and   is_active = 1`); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	fmt.Printf("[DEBUG] rides count: %v\n", len(rides))
-	if len(rides) == 0 {
+	fmt.Printf("[DEBUG1] chairs count: %v\n", len(chairs))
+	if len(chairs) == 0 {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 	p1 := float32(time.Since(st).Milliseconds()) / 1000.0
+	rides := []Ride{}
+	if err := db.SelectContext(ctx, &rides, "SELECT * FROM rides WHERE chair_id IS NULL ORDER BY created_at LIMIT ?", 2*len(chairs)); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	fmt.Printf("[DEBUG1] rides count: %v\n", len(rides))
+	if len(rides) == 0 {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	p2 := float32(time.Since(st).Milliseconds()) / 1000.0
 	// matched := &Chair{}
 	// empty := false
 	// for i := 0; i < 10; i++ {
@@ -85,21 +100,7 @@ func internalGetMatching(w http.ResponseWriter, r *http.Request) {
 	// 	return
 	// }
 	// TODO: chair_locationsの扱いが間違っているので、chairs TBLに最新の緯度経度をキャッシュして改善する
-	var chairs []Chair
-	if err := db.SelectContext(ctx, &chairs, `
-		select *
-		from chairs
-		where is_completed = 1
-		and   is_active = 1`); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-	fmt.Printf("[DEBUG] chairs count: %v\n", len(chairs))
-	if len(chairs) == 0 {
-		w.WriteHeader(http.StatusNoContent)
-		return
-	}
-	p2 := float32(time.Since(st).Milliseconds()) / 1000.0
+
 	n := len(rides) + len(chairs) + 2
 	// 最小費用流
 	mcf := mcf.NewMinCostFlow(n)
@@ -113,8 +114,13 @@ func internalGetMatching(w http.ResponseWriter, r *http.Request) {
 	for i, c := range chairs {
 		for j, r := range rides {
 			cLoc := getLatestChairLoc(c.ID)
-			distance := abs(cLoc.Latitude-r.PickupLatitude) + abs(cLoc.Longitude-r.PickupLongitude)
-			mcf.AddEdge(i+1, len(chairs)+j+1, 1, distance)
+			distance := calculateDistance(cLoc.Latitude, cLoc.Longitude, r.PickupLatitude, r.PickupLongitude)
+			speed := 1
+			if s, ok := ChairSpeedbyName[c.Model]; ok {
+				speed = s
+			}
+			time := distance / speed
+			mcf.AddEdge(i+1, len(chairs)+j+1, 1, time)
 		}
 	}
 
@@ -159,6 +165,21 @@ func internalGetMatching(w http.ResponseWriter, r *http.Request) {
 	if _, err := db.ExecContext(ctx, fmt.Sprintf("UPDATE rides SET chair_id = ELT(FIELD(id, %s), %s) WHERE id IN (%s)", rideIDsComma, chairIDsComma, rideIDsComma)); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
+	}
+	for _, e := range mcf.Edges() {
+		// 流量のあるEdgeだけを見る(source, sinkは除く)
+		if e.Flow() == 0 || e.From() == 0 || e.To() == n-1 {
+			continue
+		}
+		chairID := chairs[e.From()-1].ID
+		ride := rides[e.To()-len(chairs)-1]
+		if _, ok := ChairNotifChan[chairID]; !ok {
+			ChairNotifChan[chairID] = make(chan Notif, 5)
+		}
+		ChairNotifChan[chairID] <- Notif{
+			Ride: &ride,
+		}
+		fmt.Printf("[DEBUG3] createRideStatus 03 ed: chairID: %v\n", chairID)
 	}
 	p5 := float32(time.Since(st).Milliseconds()) / 1000.0
 	// 上で防いでいるはずなのに入れないと「椅子がライドの完了通知を受け取る前に、別の新しいライドの通知を受け取りました 」になるから追加

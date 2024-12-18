@@ -155,6 +155,10 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 	LatestRideStatusCache = sync.Map{}
 	LatestRideCache = sync.Map{}
 	LatestChairLoc = sync.Map{}
+	AppNotifChan = make(map[string]chan Notif)
+	ChairNotifChan = make(map[string]chan Notif)
+	ChairSpeedbyName = map[string]int{}
+	ChairStatsCache = sync.Map{}
 
 	chairLocations := []ChairLocation{}
 	if err := db.SelectContext(ctx, &chairLocations, "SELECT * FROM chair_locations ORDER BY created_at"); err != nil {
@@ -163,6 +167,15 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, cl := range chairLocations {
 		LatestChairLoc.Store(cl.ChairID, cl)
+	}
+
+	chairModels := []ChairModel{}
+	if err := db.SelectContext(ctx, &chairModels, "SELECT * FROM chair_models"); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	for _, cm := range chairModels {
+		ChairSpeedbyName[cm.Name] = cm.Speed
 	}
 	writeJSON(w, http.StatusOK, postInitializeResponse{Language: "go"})
 }

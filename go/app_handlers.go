@@ -286,17 +286,26 @@ type executableGet interface {
 	GetContext(ctx context.Context, dest interface{}, query string, args ...interface{}) error
 }
 
-type UserNoti struct {
+type Notif struct {
 	Ride         *Ride
 	RideStatusID string
 	RideStatus   string
+}
+
+type ChairStats struct {
+	RideCount       int
+	TotalEvaluation int
 }
 
 var (
 	LatestRideStatusCache = sync.Map{}
 	LatestRideCache       = sync.Map{}
 	LatestChairLoc        = sync.Map{}
-	UserNotiChan          = make(map[string]chan UserNoti)
+	AppNotifChan          = make(map[string]chan Notif)
+	ChairNotifChan        = make(map[string]chan Notif)
+	ChairSpeed            = map[string]int{}
+	ChairSpeedbyName      = map[string]int{}
+	ChairStatsCache       = sync.Map{}
 )
 
 type Loc struct {
@@ -324,14 +333,27 @@ func createRideStatus(ctx context.Context, tx *sqlx.Tx, ride *Ride, status strin
 	)
 	lazyDo := func() {
 		LatestRideStatusCache.Store(ride.ID, status)
-		if _, ok := UserNotiChan[ride.UserID]; !ok {
-			UserNotiChan[ride.UserID] = make(chan UserNoti, 2)
-		}
-		UserNotiChan[ride.UserID] <- UserNoti{
+		notif := Notif{
 			Ride:         ride,
 			RideStatusID: id,
 			RideStatus:   status,
 		}
+		go func() {
+			if _, ok := AppNotifChan[ride.UserID]; !ok {
+				AppNotifChan[ride.UserID] = make(chan Notif, 5)
+			}
+			AppNotifChan[ride.UserID] <- notif
+		}()
+		go func() {
+			fmt.Printf("[DEBUG3] createRideStatus 03 st: chairID: %v\n", ride.ChairID.String)
+			if ride.ChairID.Valid {
+				if _, ok := ChairNotifChan[ride.ChairID.String]; !ok {
+					ChairNotifChan[ride.ChairID.String] = make(chan Notif, 5)
+				}
+				ChairNotifChan[ride.ChairID.String] <- notif
+				fmt.Printf("[DEBUG3] createRideStatus 03 ed: chairID: %v\n", ride.ChairID.String)
+			}
+		}()
 	}
 
 	return lazyDo, err
@@ -372,6 +394,20 @@ func getLatestChairLoc(chairID string) ChairLocation {
 		return loc.(ChairLocation)
 	}
 	return ChairLocation{}
+}
+
+func getChairStatsCache(ctx context.Context, chairID string) ChairStats {
+	if stats, ok := ChairStatsCache.Load(chairID); ok {
+		return stats.(ChairStats)
+	}
+	return ChairStats{}
+}
+
+func AddChairStatsCache(ctx context.Context, chairID string, evaluation int) {
+	stats := getChairStatsCache(ctx, chairID)
+	stats.RideCount++
+	stats.TotalEvaluation += evaluation
+	ChairStatsCache.Store(chairID, stats)
 }
 
 func appPostRides(w http.ResponseWriter, r *http.Request) {
@@ -649,6 +685,7 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 	}
 	if ride.ChairID.Valid {
 		LatestRideCache.Delete(ride.ChairID.String)
+		AddChairStatsCache(ctx, ride.ChairID.String, req.Evaluation)
 		// lazyDo2, _ = storeRideTx(ctx, tx, ride.ChairID.String)
 	}
 	result, err := tx.ExecContext(
@@ -773,6 +810,7 @@ type appGetNotificationResponseChairStats struct {
 }
 
 // SSE
+// TODO: 多分空のときに201返せてないので修正
 func appGetNotification(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	user := ctx.Value("user").(*User)
@@ -784,13 +822,16 @@ func appGetNotification(w http.ResponseWriter, r *http.Request) {
 
 	clientGone := ctx.Done()
 	rc := http.NewResponseController(w)
+	if _, ok := AppNotifChan[user.ID]; !ok {
+		AppNotifChan[user.ID] = make(chan Notif, 5)
+	}
 	for {
 		select {
 		case <-clientGone:
 			fmt.Println("Client disconnected")
 			return
-		case noti := <-UserNotiChan[user.ID]:
-			response, err := getNotification(ctx, user, noti.Ride, noti.RideStatusID, noti.RideStatus)
+		case notif := <-AppNotifChan[user.ID]:
+			response, err := getAppNotification(ctx, user, notif.Ride, notif.RideStatusID, notif.RideStatus)
 			if err != nil {
 				return
 			}
@@ -811,7 +852,7 @@ func appGetNotification(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func getNotification(ctx context.Context, user *User, ride *Ride, rideStatusID, rideStatus string) (*appGetNotificationResponse, error) {
+func getAppNotification(ctx context.Context, user *User, ride *Ride, rideStatusID, rideStatus string) (*appGetNotificationResponse, error) {
 	tx, err := db.Beginx()
 	if err != nil {
 		// writeError(w, http.StatusInternalServerError, err)
@@ -966,7 +1007,12 @@ func getChairStats(ctx context.Context, tx *sqlx.Tx, chairID string) (appGetNoti
 	if totalRideCount > 0 {
 		stats.TotalEvaluationAvg = totalEvaluation / float64(totalRideCount)
 	}
-
+	// statsTmp := getChairStatsCache(ctx, chairID)
+	// fmt.Printf("[DEBUG4] RideCount: %d, TotalEvaluation: %d\n", statsTmp.RideCount, statsTmp.TotalEvaluation)
+	// return appGetNotificationResponseChairStats{
+	// 	TotalRidesCount:    statsTmp.RideCount,
+	// 	TotalEvaluationAvg: float64(statsTmp.TotalEvaluation) / float64(statsTmp.RideCount),
+	// }, nil
 	return stats, nil
 }
 
@@ -1015,69 +1061,103 @@ func appGetNearbyChairs(w http.ResponseWriter, r *http.Request) {
 
 	coordinate := Coordinate{Latitude: lat, Longitude: lon}
 
-	tx, err := db.Beginx()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-	defer tx.Rollback()
+	// tx, err := db.Beginx()
+	// if err != nil {
+	// 	writeError(w, http.StatusInternalServerError, err)
+	// 	return
+	// }
+	// defer tx.Rollback()
 
-	activeChairs := []Chair{}
-	err = tx.SelectContext(
-		ctx,
-		&activeChairs,
-		`SELECT * FROM chairs WHERE is_active = 1`,
-	)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
+	// activeChairs := []Chair{}
+	// err = tx.SelectContext(
+	// 	ctx,
+	// 	&activeChairs,
+	// 	`SELECT * FROM chairs WHERE is_active = 1`,
+	// )
+	// if err != nil {
+	// 	writeError(w, http.StatusInternalServerError, err)
+	// 	return
+	// }
 
 	nearbyChairs := []appGetNearbyChairsResponseChair{}
-	for _, chair := range activeChairs {
-		// if !chair.IsActive {
-		// 	continue
-		// }
+	// for _, chair := range activeChairs {
+	// 	// if !chair.IsActive {
+	// 	// 	continue
+	// 	// }
 
-		rides := []*Ride{}
-		if err := tx.SelectContext(ctx, &rides, `SELECT * FROM rides WHERE chair_id = ? ORDER BY created_at DESC`, chair.ID); err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
+	// 	rides := []*Ride{}
+	// 	if err := tx.SelectContext(ctx, &rides, `SELECT * FROM rides WHERE chair_id = ? ORDER BY created_at DESC`, chair.ID); err != nil {
+	// 		writeError(w, http.StatusInternalServerError, err)
+	// 		return
+	// 	}
 
-		skip := false
-		for _, ride := range rides {
-			// 過去にライドが存在し、かつ、それが完了していない場合はスキップ
-			status, err := getLatestRideStatus(ctx, tx, ride.ID)
-			if err != nil {
-				writeError(w, http.StatusInternalServerError, err)
-				return
-			}
-			if status != "COMPLETED" {
-				skip = true
-				break
-			}
-		}
-		if skip {
-			continue
-		}
+	// 	skip := false
+	// 	for _, ride := range rides {
+	// 		// 過去にライドが存在し、かつ、それが完了していない場合はスキップ
+	// 		status, err := getLatestRideStatus(ctx, tx, ride.ID)
+	// 		if err != nil {
+	// 			writeError(w, http.StatusInternalServerError, err)
+	// 			return
+	// 		}
+	// 		if status != "COMPLETED" {
+	// 			skip = true
+	// 			break
+	// 		}
+	// 	}
+	// 	if skip {
+	// 		continue
+	// 	}
 
-		// 最新の位置情報を取得
-		chairLocation := &ChairLocation{}
-		err = tx.GetContext(
-			ctx,
-			chairLocation,
-			`SELECT * FROM chair_locations WHERE chair_id = ? ORDER BY created_at DESC LIMIT 1`,
-			chair.ID,
-		)
-		if err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
-				continue
-			}
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
+	// 	// 最新の位置情報を取得
+	// 	chairLocation := &ChairLocation{}
+	// 	err = tx.GetContext(
+	// 		ctx,
+	// 		chairLocation,
+	// 		`SELECT * FROM chair_locations WHERE chair_id = ? ORDER BY created_at DESC LIMIT 1`,
+	// 		chair.ID,
+	// 	)
+	// 	if err != nil {
+	// 		if errors.Is(err, sql.ErrNoRows) {
+	// 			continue
+	// 		}
+	// 		writeError(w, http.StatusInternalServerError, err)
+	// 		return
+	// 	}
 
+	// 	if calculateDistance(coordinate.Latitude, coordinate.Longitude, chairLocation.Latitude, chairLocation.Longitude) <= distance {
+	// 		nearbyChairs = append(nearbyChairs, appGetNearbyChairsResponseChair{
+	// 			ID:    chair.ID,
+	// 			Name:  chair.Name,
+	// 			Model: chair.Model,
+	// 			CurrentCoordinate: Coordinate{
+	// 				Latitude:  chairLocation.Latitude,
+	// 				Longitude: chairLocation.Longitude,
+	// 			},
+	// 		})
+	// 	}
+	// }
+
+	// retrievedAt := &time.Time{}
+	// err = tx.GetContext(
+	// 	ctx,
+	// 	retrievedAt,
+	// 	`SELECT CURRENT_TIMESTAMP(6)`,
+	// )
+	// if err != nil {
+	// 	writeError(w, http.StatusInternalServerError, err)
+	// 	return
+	// }
+	var chairs []Chair
+	if err := db.SelectContext(ctx, &chairs, `
+		select *
+		from chairs
+		where is_completed = 1
+		and   is_active = 1`); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	for _, chair := range chairs {
+		chairLocation := getLatestChairLoc(chair.ID)
 		if calculateDistance(coordinate.Latitude, coordinate.Longitude, chairLocation.Latitude, chairLocation.Longitude) <= distance {
 			nearbyChairs = append(nearbyChairs, appGetNearbyChairsResponseChair{
 				ID:    chair.ID,
@@ -1090,18 +1170,7 @@ func appGetNearbyChairs(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 	}
-
-	retrievedAt := &time.Time{}
-	err = tx.GetContext(
-		ctx,
-		retrievedAt,
-		`SELECT CURRENT_TIMESTAMP(6)`,
-	)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-
+	retrievedAt := time.Now()
 	writeJSON(w, http.StatusOK, &appGetNearbyChairsResponse{
 		Chairs:      nearbyChairs,
 		RetrievedAt: retrievedAt.UnixMilli(),
