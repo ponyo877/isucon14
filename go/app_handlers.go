@@ -338,22 +338,22 @@ func createRideStatus(ctx context.Context, tx *sqlx.Tx, ride *Ride, status strin
 			RideStatusID: id,
 			RideStatus:   status,
 		}
-		go func() {
-			if _, ok := AppNotifChan[ride.UserID]; !ok {
-				AppNotifChan[ride.UserID] = make(chan Notif, 5)
+		// go func() {
+		if _, ok := AppNotifChan[ride.UserID]; !ok {
+			AppNotifChan[ride.UserID] = make(chan Notif, 5)
+		}
+		AppNotifChan[ride.UserID] <- notif
+		// }()
+		// go func() {
+		fmt.Printf("[DEBUG3] createRideStatus 03 st: chairID: %v\n", ride.ChairID.String)
+		if ride.ChairID.Valid {
+			if _, ok := ChairNotifChan[ride.ChairID.String]; !ok {
+				ChairNotifChan[ride.ChairID.String] = make(chan Notif, 5)
 			}
-			AppNotifChan[ride.UserID] <- notif
-		}()
-		go func() {
-			fmt.Printf("[DEBUG3] createRideStatus 03 st: chairID: %v\n", ride.ChairID.String)
-			if ride.ChairID.Valid {
-				if _, ok := ChairNotifChan[ride.ChairID.String]; !ok {
-					ChairNotifChan[ride.ChairID.String] = make(chan Notif, 5)
-				}
-				ChairNotifChan[ride.ChairID.String] <- notif
-				fmt.Printf("[DEBUG3] createRideStatus 03 ed: chairID: %v\n", ride.ChairID.String)
-			}
-		}()
+			ChairNotifChan[ride.ChairID.String] <- notif
+			fmt.Printf("[DEBUG3] createRideStatus 03 ed: chairID: %v\n", ride.ChairID.String)
+		}
+		// }()
 	}
 
 	return lazyDo, err
@@ -566,7 +566,7 @@ func appPostRides(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	go lazyDo()
+	lazyDo()
 
 	writeJSON(w, http.StatusAccepted, &appPostRidesResponse{
 		RideID: rideID,
@@ -773,8 +773,8 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	go lazyDo()
-	go lazyDo2()
+	lazyDo()
+	lazyDo2()
 
 	writeJSON(w, http.StatusOK, &appPostRideEvaluationResponse{
 		CompletedAt: ride.UpdatedAt.UnixMilli(),
