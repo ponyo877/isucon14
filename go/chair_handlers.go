@@ -193,8 +193,8 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	go lazyDo()
-	go lazyDo2()
+	lazyDo()
+	lazyDo2()
 
 	writeJSON(w, http.StatusOK, &chairPostCoordinateResponse{
 		RecordedAt: location.CreatedAt.UnixMilli(),
@@ -452,7 +452,7 @@ func chairPostRideStatus(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	go lazyDo()
+	lazyDo()
 
 	w.WriteHeader(http.StatusNoContent)
 }
