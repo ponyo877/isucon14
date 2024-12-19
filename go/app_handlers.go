@@ -1168,67 +1168,72 @@ func appGetNearbyChairs(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback()
 
 	activeChairs := []Chair{}
-	err = tx.SelectContext(
-		ctx,
-		&activeChairs,
-		`SELECT * FROM chairs WHERE is_active = 1`,
-	)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-	// if err := tx.SelectContext(ctx, &activeChairs, `
-	// 	select *
-	// 	from chairs
-	// 	where is_completed = 1
-	// 	and   is_active = 1`); err != nil {
+	// err = tx.SelectContext(
+	// 	ctx,
+	// 	&activeChairs,
+	// 	`SELECT * FROM chairs WHERE is_active = 1`,
+	// )
+	// if err != nil {
 	// 	writeError(w, http.StatusInternalServerError, err)
 	// 	return
 	// }
+	if err := tx.SelectContext(ctx, &activeChairs, `
+		select *
+		from chairs
+		where is_completed = 1
+		and   is_active = 1`); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
 
 	for _, chair := range activeChairs {
 		// if !chair.IsActive {
 		// 	continue
 		// }
 
-		rides := []*Ride{}
-		if err := tx.SelectContext(ctx, &rides, `SELECT * FROM rides WHERE chair_id = ? ORDER BY created_at DESC`, chair.ID); err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
+		// rides := []*Ride{}
+		// if err := tx.SelectContext(ctx, &rides, `SELECT * FROM rides WHERE chair_id = ? ORDER BY created_at DESC`, chair.ID); err != nil {
+		// 	writeError(w, http.StatusInternalServerError, err)
+		// 	return
+		// }
 
-		skip := false
-		for _, ride := range rides {
-			// 過去にライドが存在し、かつ、それが完了していない場合はスキップ
-			status, err := getLatestRideStatus(ctx, tx, ride.ID)
-			if err != nil {
-				writeError(w, http.StatusInternalServerError, err)
-				return
-			}
-			if status != "COMPLETED" {
-				skip = true
-				break
-			}
-		}
-		if skip {
-			continue
-		}
+		// skip := false
+		// for _, ride := range rides {
+		// 	// 過去にライドが存在し、かつ、それが完了していない場合はスキップ
+		// 	status, err := getLatestRideStatus(ctx, tx, ride.ID)
+		// 	if err != nil {
+		// 		writeError(w, http.StatusInternalServerError, err)
+		// 		return
+		// 	}
+		// 	if status != "COMPLETED" {
+		// 		skip = true
+		// 		break
+		// 	}
+		// }
+		// if skip {
+		// 	continue
+		// }
 
 		// 最新の位置情報を取得
-		chairLocation := &ChairLocation{}
-		err = tx.GetContext(
-			ctx,
-			chairLocation,
-			`SELECT * FROM chair_locations WHERE chair_id = ? ORDER BY created_at DESC LIMIT 1`,
-			chair.ID,
-		)
-		if err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
-				continue
-			}
-			writeError(w, http.StatusInternalServerError, err)
-			return
+		// chairLocation := &ChairLocation{}
+		// err = tx.GetContext(
+		// 	ctx,
+		// 	chairLocation,
+		// 	`SELECT * FROM chair_locations WHERE chair_id = ? ORDER BY created_at DESC LIMIT 1`,
+		// 	chair.ID,
+		// )
+		// if err != nil {
+		// 	if errors.Is(err, sql.ErrNoRows) {
+		// 		continue
+		// 	}
+		// 	writeError(w, http.StatusInternalServerError, err)
+		// 	return
+		// }
+		LatestChairLoc, ok := LatestChairLoc.Load(chair.ID)
+		if !ok {
+			continue
 		}
+		chairLocation := LatestChairLoc.(ChairLocation)
 
 		if calculateDistance(coordinate.Latitude, coordinate.Longitude, chairLocation.Latitude, chairLocation.Longitude) <= distance {
 			nearbyChairs = append(nearbyChairs, appGetNearbyChairsResponseChair{
@@ -1242,16 +1247,16 @@ func appGetNearbyChairs(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 	}
-	retrievedAt := &time.Time{}
-	err = tx.GetContext(
-		ctx,
-		retrievedAt,
-		`SELECT CURRENT_TIMESTAMP(6)`,
-	)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
+	// retrievedAt := &time.Time{}
+	// err = tx.GetContext(
+	// 	ctx,
+	// 	retrievedAt,
+	// 	`SELECT CURRENT_TIMESTAMP(6)`,
+	// )
+	// if err != nil {
+	// 	writeError(w, http.StatusInternalServerError, err)
+	// 	return
+	// }
 
 	// var chairs []Chair
 	// if err := db.SelectContext(ctx, &chairs, `
@@ -1276,7 +1281,7 @@ func appGetNearbyChairs(w http.ResponseWriter, r *http.Request) {
 	// 		})
 	// 	}
 	// }
-	// retrievedAt := time.Now()
+	retrievedAt := time.Now()
 	writeJSON(w, http.StatusOK, &appGetNearbyChairsResponse{
 		Chairs:      nearbyChairs,
 		RetrievedAt: retrievedAt.UnixMilli(),
