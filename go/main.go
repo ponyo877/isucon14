@@ -2,7 +2,6 @@ package main
 
 import (
 	crand "crypto/rand"
-	"encoding/json"
 	"fmt"
 	"log"
 	"log/slog"
@@ -11,6 +10,8 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+
+	"github.com/go-json-experiment/json"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -171,6 +172,36 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 	for _, cm := range chairModels {
 		chairSpeedbyName.Store(cm.Name, cm.Speed)
 	}
+
+	rideStatuses := []RideStatus{}
+	if err := db.SelectContext(ctx, &rideStatuses, `
+		SELECT rs1.* FROM ride_statuses rs1
+		INNER JOIN (
+			SELECT ride_id, MAX(created_at) AS max_created_at
+			FROM ride_statuses
+			GROUP BY ride_id
+		) rs2 ON rs1.ride_id = rs2.ride_id AND rs1.created_at = rs2.max_created_at`); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	for _, rs := range rideStatuses {
+		latestRideStatusCache.Store(rs.RideID, rs.Status)
+	}
+	// SELECT * FROM rides WHERE chair_id = ? ORDER BY updated_at DESC LIMIT 1
+	rides := []Ride{}
+	if err := db.SelectContext(ctx, &rides, `
+		SELECT r1.* FROM rides r1
+		INNER JOIN (
+			SELECT chair_id, MAX(updated_at) AS max_updated_at
+			FROM rides
+			GROUP BY chair_id
+		) r2 ON r1.chair_id = r2.chair_id AND r1.updated_at = r2.max_updated_at`); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	for _, r := range rides {
+		latestRideCache.Store(r.ChairID, r)
+	}
 	writeJSON(w, http.StatusOK, postInitializeResponse{Language: "go"})
 }
 
@@ -180,7 +211,7 @@ type Coordinate struct {
 }
 
 func bindJSON(r *http.Request, v interface{}) error {
-	return json.NewDecoder(r.Body).Decode(v)
+	return json.UnmarshalRead(r.Body, v)
 }
 
 func writeJSON(w http.ResponseWriter, statusCode int, v interface{}) {

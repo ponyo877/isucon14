@@ -558,7 +558,6 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if ride.ChairID.Valid {
-		latestRideCache.Delete(ride.ChairID.String)
 		addChairStatsCache(ride.ChairID.String, req.Evaluation)
 	}
 	result, err := tx.ExecContext(
@@ -763,11 +762,6 @@ func getAppNotification(ctx context.Context, user *User, ride *Ride, rideStatusI
 			Model: chair.Model,
 			Stats: stats,
 		}
-	}
-
-	_, err = tx.ExecContext(ctx, `UPDATE ride_statuses SET app_sent_at = CURRENT_TIMESTAMP(6) WHERE id = ?`, rideStatusID)
-	if err != nil {
-		return nil, err
 	}
 
 	if err := tx.Commit(); err != nil {

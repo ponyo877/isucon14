@@ -96,6 +96,39 @@ func createRideStatus(ctx context.Context, tx *sqlx.Tx, ride *Ride, status strin
 	return lazyDo, err
 }
 
+func createRideStatusDB(ctx context.Context, db *sqlx.DB, ride *Ride, status string) (func(), error) {
+	id := ulid.Make().String()
+	_, err := db.ExecContext(
+		ctx,
+		`INSERT INTO ride_statuses (id, ride_id, status) VALUES (?, ?, ?)`,
+		id, ride.ID, status,
+	)
+	lazyDo := func() {
+		latestRideStatusCache.Store(ride.ID, status)
+		notif := Notif{
+			Ride:         ride,
+			RideStatusID: id,
+			RideStatus:   status,
+		}
+		appChan, ok := appNotifChan.Load(ride.UserID)
+		if !ok {
+			appNotifChan.Store(ride.UserID, make(chan Notif, 5))
+			appChan, _ = appNotifChan.Load(ride.UserID)
+		}
+		appChan.(chan Notif) <- notif
+		if ride.ChairID.Valid {
+			chairChan, ok := chairNotifChan.Load(ride.ChairID.String)
+			if !ok {
+				chairNotifChan.Store(ride.ChairID.String, make(chan Notif, 5))
+				chairChan, _ = chairNotifChan.Load(ride.ChairID.String)
+			}
+			chairChan.(chan Notif) <- notif
+		}
+	}
+
+	return lazyDo, err
+}
+
 func getLatestRide(ctx context.Context, tx *sqlx.Tx, chairID string) (Ride, error) {
 	if ride, ok := latestRideCache.Load(chairID); ok {
 		return ride.(Ride), nil

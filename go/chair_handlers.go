@@ -109,12 +109,7 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 	lazyDo := func() {}
 	lazyDo2 := func() {}
 
-	tx, err := db.Beginx()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-	defer tx.Rollback()
+	var err error
 
 	chairLocationID := ulid.Make().String()
 	now := time.Now()
@@ -124,24 +119,12 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	location := &ChairLocation{
-		ID:        chairLocationID,
-		ChairID:   chair.ID,
-		Latitude:  req.Latitude,
-		Longitude: req.Longitude,
-		CreatedAt: now,
-	}
-
 	ride := &Ride{}
-	rideIns, err := getLatestRide(ctx, tx, chair.ID)
-	if err != nil {
-		if !errors.Is(err, sql.ErrNoRows) {
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
-	} else {
+	rideAny, ok := latestRideCache.Load(chair.ID)
+	if ok {
+		rideIns := rideAny.(Ride)
 		ride = &rideIns
-		status, err := getLatestRideStatus(ctx, tx, ride.ID)
+		status, err := getLatestRideStatus(ctx, nil, ride.ID)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
@@ -149,7 +132,7 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 
 		if status != "COMPLETED" && status != "CANCELED" {
 			if req.Latitude == ride.PickupLatitude && req.Longitude == ride.PickupLongitude && status == "ENROUTE" {
-				lazyDo, err = createRideStatus(ctx, tx, ride, "PICKUP")
+				lazyDo, err = createRideStatusDB(ctx, db, ride, "PICKUP")
 				if err != nil {
 					writeError(w, http.StatusInternalServerError, err)
 					return
@@ -157,7 +140,7 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 			}
 
 			if req.Latitude == ride.DestinationLatitude && req.Longitude == ride.DestinationLongitude && status == "CARRYING" {
-				lazyDo, err = createRideStatus(ctx, tx, ride, "ARRIVED")
+				lazyDo, err = createRideStatusDB(ctx, db, ride, "ARRIVED")
 				if err != nil {
 					writeError(w, http.StatusInternalServerError, err)
 					return
@@ -166,15 +149,11 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if err := tx.Commit(); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
 	lazyDo()
 	lazyDo2()
 
 	writeJSON(w, http.StatusOK, &chairPostCoordinateResponse{
-		RecordedAt: location.CreatedAt.UnixMilli(),
+		RecordedAt: now.UnixMilli(),
 	})
 }
 
@@ -240,47 +219,20 @@ func chairGetNotification(w http.ResponseWriter, r *http.Request) {
 }
 
 func getChairNotification(ctx context.Context, chair *Chair, ride *Ride) (*chairGetNotificationResponse, error) {
-	tx, err := db.Beginx()
+	rideStatus, err := getLatestRideStatus(ctx, nil, ride.ID)
 	if err != nil {
 		return nil, err
-	}
-	defer tx.Rollback()
-	yetSentRideStatus := RideStatus{}
-	status := ""
-
-	if err := tx.GetContext(ctx, &yetSentRideStatus, `SELECT * FROM ride_statuses WHERE ride_id = ? AND chair_sent_at IS NULL ORDER BY created_at ASC LIMIT 1`, ride.ID); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			status, err = getLatestRideStatus(ctx, tx, ride.ID)
-			if err != nil {
-				return nil, err
-			}
-		} else {
-			return nil, err
-		}
-	} else {
-		status = yetSentRideStatus.Status
 	}
 
 	user := &User{}
-	err = tx.GetContext(ctx, user, "SELECT * FROM users WHERE id = ? FOR SHARE", ride.UserID)
+	err = db.GetContext(ctx, user, "SELECT * FROM users WHERE id = ? FOR SHARE", ride.UserID)
 	if err != nil {
 		return nil, err
 	}
-
-	if yetSentRideStatus.ID != "" {
-		_, err := tx.ExecContext(ctx, `UPDATE ride_statuses SET chair_sent_at = CURRENT_TIMESTAMP(6) WHERE id = ?`, yetSentRideStatus.ID)
-		if err != nil {
+	if rideStatus == "COMPLETED" {
+		if _, err = db.ExecContext(ctx, "UPDATE chairs SET is_completed = 1 WHERE id = ?", ride.ChairID.String); err != nil {
 			return nil, err
 		}
-		if yetSentRideStatus.Status == "COMPLETED" {
-			if _, err = db.ExecContext(ctx, "UPDATE chairs SET is_completed = 1 WHERE id = ?", ride.ChairID.String); err != nil {
-				return nil, err
-			}
-		}
-	}
-
-	if err := tx.Commit(); err != nil {
-		return nil, err
 	}
 
 	return &chairGetNotificationResponse{
@@ -298,7 +250,7 @@ func getChairNotification(ctx context.Context, chair *Chair, ride *Ride) (*chair
 				Latitude:  ride.DestinationLatitude,
 				Longitude: ride.DestinationLongitude,
 			},
-			Status: status,
+			Status: rideStatus,
 		},
 		RetryAfterMs: 250,
 	}, nil

@@ -6,6 +6,7 @@ toolchain go1.23.4
 
 require (
 	github.com/go-chi/chi/v5 v5.1.0
+	github.com/go-json-experiment/json v0.0.0-20241219015541-cad22780dab8
 	github.com/go-sql-driver/mysql v1.8.1
 	github.com/jmoiron/sqlx v1.4.0
 	github.com/kaz/pprotein v1.2.4

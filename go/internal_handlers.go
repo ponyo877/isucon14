@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
 	"net/http"
 	"sync"
@@ -95,7 +96,6 @@ func internalGetMatching(w http.ResponseWriter, r *http.Request) {
 		}
 		chairIDsComma += fmt.Sprintf("'%s'", mp.chairID)
 		rideIDsComma += fmt.Sprintf("'%s'", mp.rideID)
-		latestRideCache.Delete(mp.chairID)
 	}
 	if _, err := db.ExecContext(ctx, fmt.Sprintf("UPDATE chairs SET is_completed = 0 WHERE id IN (%s)", chairIDsComma)); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
@@ -112,6 +112,8 @@ func internalGetMatching(w http.ResponseWriter, r *http.Request) {
 		}
 		chairID := chairs[e.From()-1].ID
 		ride := rides[e.To()-len(chairs)-1]
+		ride.ChairID = sql.NullString{String: chairID, Valid: true}
+		latestRideCache.Store(chairID, ride)
 		chairChan, ok := chairNotifChan.Load(chairID)
 		if !ok {
 			chairNotifChan.Store(chairID, make(chan Notif, 5))
