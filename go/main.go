@@ -152,13 +152,14 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 			log.Printf("failed to communicate with pprotein: %v", err)
 		}
 	}()
-	LatestRideStatusCache = sync.Map{}
-	LatestRideCache = sync.Map{}
-	LatestChairLoc = sync.Map{}
-	AppNotifChan = make(map[string]chan Notif)
-	ChairNotifChan = make(map[string]chan Notif)
-	ChairSpeedbyName = map[string]int{}
-	ChairStatsCache = sync.Map{}
+	latestRideStatusCache = sync.Map{}
+	latestRideCache = sync.Map{}
+	latestChairLocation = sync.Map{}
+	chairStatsCache = sync.Map{}
+	chairTotalDistanceCache = sync.Map{}
+	chairSpeedbyName = map[string]int{}
+	appNotifChan = make(map[string]chan Notif)
+	chairNotifChan = make(map[string]chan Notif)
 
 	chairLocations := []ChairLocation{}
 	if err := db.SelectContext(ctx, &chairLocations, "SELECT * FROM chair_locations ORDER BY created_at"); err != nil {
@@ -166,7 +167,7 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, cl := range chairLocations {
-		LatestChairLoc.Store(cl.ChairID, cl)
+		latestChairLocation.Store(cl.ChairID, cl)
 	}
 
 	chairModels := []ChairModel{}
@@ -175,7 +176,7 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, cm := range chairModels {
-		ChairSpeedbyName[cm.Name] = cm.Speed
+		chairSpeedbyName[cm.Name] = cm.Speed
 	}
 	writeJSON(w, http.StatusOK, postInitializeResponse{Language: "go"})
 }

@@ -113,10 +113,10 @@ func internalGetMatching(w http.ResponseWriter, r *http.Request) {
 	// chair -> ride
 	for i, c := range chairs {
 		for j, r := range rides {
-			cLoc := getLatestChairLoc(c.ID)
+			cLoc := getLatestChairLocation(c.ID)
 			distance := calculateDistance(cLoc.Latitude, cLoc.Longitude, r.PickupLatitude, r.PickupLongitude)
 			speed := 1
-			if s, ok := ChairSpeedbyName[c.Model]; ok {
+			if s, ok := chairSpeedbyName[c.Model]; ok {
 				speed = s
 			}
 			time := distance / speed
@@ -155,7 +155,7 @@ func internalGetMatching(w http.ResponseWriter, r *http.Request) {
 		}
 		chairIDsComma += fmt.Sprintf("'%s'", mp.chairID)
 		rideIDsComma += fmt.Sprintf("'%s'", mp.rideID)
-		LatestRideCache.Delete(mp.chairID)
+		latestRideCache.Delete(mp.chairID)
 	}
 	if _, err := db.ExecContext(ctx, fmt.Sprintf("UPDATE chairs SET is_completed = 0 WHERE id IN (%s)", chairIDsComma)); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
@@ -173,10 +173,10 @@ func internalGetMatching(w http.ResponseWriter, r *http.Request) {
 		}
 		chairID := chairs[e.From()-1].ID
 		ride := rides[e.To()-len(chairs)-1]
-		if _, ok := ChairNotifChan[chairID]; !ok {
-			ChairNotifChan[chairID] = make(chan Notif, 5)
+		if _, ok := chairNotifChan[chairID]; !ok {
+			chairNotifChan[chairID] = make(chan Notif, 5)
 		}
-		ChairNotifChan[chairID] <- Notif{
+		chairNotifChan[chairID] <- Notif{
 			Ride: &ride,
 		}
 		fmt.Printf("[DEBUG3] createRideStatus 03 ed: chairID: %v\n", chairID)
@@ -213,6 +213,6 @@ func match(ctx context.Context, chairID, rideID string) error {
 	if _, err := db.ExecContext(ctx, "UPDATE rides SET chair_id = ? WHERE id = ?", chairID, rideID); err != nil {
 		return err
 	}
-	LatestRideCache.Delete(chairID)
+	latestRideCache.Delete(chairID)
 	return nil
 }

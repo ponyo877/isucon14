@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
-	"sync"
 	"time"
 
 	"github.com/go-sql-driver/mysql"
@@ -384,130 +383,6 @@ type executableGet interface {
 	GetContext(ctx context.Context, dest interface{}, query string, args ...interface{}) error
 }
 
-type Notif struct {
-	Ride         *Ride
-	RideStatusID string
-	RideStatus   string
-}
-
-type ChairStats struct {
-	RideCount       int
-	TotalEvaluation int
-}
-
-var (
-	LatestRideStatusCache = sync.Map{}
-	LatestRideCache       = sync.Map{}
-	LatestChairLoc        = sync.Map{}
-	AppNotifChan          = make(map[string]chan Notif)
-	ChairNotifChan        = make(map[string]chan Notif)
-	ChairSpeed            = map[string]int{}
-	ChairSpeedbyName      = map[string]int{}
-	ChairStatsCache       = sync.Map{}
-)
-
-type Loc struct {
-	Latitude  int
-	Longitude int
-}
-
-func getLatestRideStatus(ctx context.Context, tx executableGet, rideID string) (string, error) {
-	if status, ok := LatestRideStatusCache.Load(rideID); ok {
-		return status.(string), nil
-	}
-	status := ""
-	if err := tx.GetContext(ctx, &status, `SELECT status FROM ride_statuses WHERE ride_id = ? ORDER BY created_at DESC LIMIT 1`, rideID); err != nil {
-		return "", err
-	}
-	return status, nil
-}
-
-func createRideStatus(ctx context.Context, tx *sqlx.Tx, ride *Ride, status string) (func(), error) {
-	id := ulid.Make().String()
-	_, err := tx.ExecContext(
-		ctx,
-		`INSERT INTO ride_statuses (id, ride_id, status) VALUES (?, ?, ?)`,
-		id, ride.ID, status,
-	)
-	lazyDo := func() {
-		LatestRideStatusCache.Store(ride.ID, status)
-		notif := Notif{
-			Ride:         ride,
-			RideStatusID: id,
-			RideStatus:   status,
-		}
-		// go func() {
-		if _, ok := AppNotifChan[ride.UserID]; !ok {
-			AppNotifChan[ride.UserID] = make(chan Notif, 5)
-		}
-		AppNotifChan[ride.UserID] <- notif
-		// }()
-		// go func() {
-		fmt.Printf("[DEBUG3] createRideStatus 03 st: chairID: %v\n", ride.ChairID.String)
-		if ride.ChairID.Valid {
-			if _, ok := ChairNotifChan[ride.ChairID.String]; !ok {
-				ChairNotifChan[ride.ChairID.String] = make(chan Notif, 5)
-			}
-			ChairNotifChan[ride.ChairID.String] <- notif
-			fmt.Printf("[DEBUG3] createRideStatus 03 ed: chairID: %v\n", ride.ChairID.String)
-		}
-		// }()
-	}
-
-	return lazyDo, err
-}
-
-func getLatestRideByChairID(ctx context.Context, tx *sqlx.Tx, chairID string) (Ride, error) {
-	if ride, ok := LatestRideCache.Load(chairID); ok {
-		return ride.(Ride), nil
-	}
-	ride := &Ride{}
-	if err := tx.GetContext(ctx, ride, `SELECT * FROM rides WHERE chair_id = ? ORDER BY updated_at DESC LIMIT 1`, chairID); err != nil {
-		return Ride{}, err
-	}
-	LatestRideCache.Store(chairID, *ride)
-	return *ride, nil
-}
-
-func createChairLoc(ctx context.Context, tx *sqlx.Tx, id, chairID string, latitude, longitude int, now time.Time) (func(), error) {
-	_, err := tx.ExecContext(
-		ctx,
-		`INSERT INTO chair_locations (id, chair_id, latitude, longitude, created_at) VALUES (?, ?, ?, ?, ?)`,
-		id, chairID, latitude, longitude, now,
-	)
-	lazyDo := func() {
-		LatestChairLoc.Store(chairID, ChairLocation{
-			ID:        id,
-			ChairID:   chairID,
-			Latitude:  latitude,
-			Longitude: longitude,
-			CreatedAt: now,
-		})
-	}
-	return lazyDo, err
-}
-
-func getLatestChairLoc(chairID string) ChairLocation {
-	if loc, ok := LatestChairLoc.Load(chairID); ok {
-		return loc.(ChairLocation)
-	}
-	return ChairLocation{}
-}
-
-func getChairStatsCache(ctx context.Context, chairID string) ChairStats {
-	if stats, ok := ChairStatsCache.Load(chairID); ok {
-		return stats.(ChairStats)
-	}
-	return ChairStats{}
-}
-
-func AddChairStatsCache(ctx context.Context, chairID string, evaluation int) {
-	stats := getChairStatsCache(ctx, chairID)
-	stats.RideCount++
-	stats.TotalEvaluation += evaluation
-	ChairStatsCache.Store(chairID, stats)
-}
-
 func appPostRides(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	req := &appPostRidesRequest{}
@@ -782,8 +657,8 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if ride.ChairID.Valid {
-		LatestRideCache.Delete(ride.ChairID.String)
-		AddChairStatsCache(ctx, ride.ChairID.String, req.Evaluation)
+		latestRideCache.Delete(ride.ChairID.String)
+		addChairStatsCache(ride.ChairID.String, req.Evaluation)
 		// lazyDo2, _ = storeRideTx(ctx, tx, ride.ChairID.String)
 	}
 	result, err := tx.ExecContext(
@@ -920,15 +795,15 @@ func appGetNotification(w http.ResponseWriter, r *http.Request) {
 
 	clientGone := ctx.Done()
 	rc := http.NewResponseController(w)
-	if _, ok := AppNotifChan[user.ID]; !ok {
-		AppNotifChan[user.ID] = make(chan Notif, 5)
+	if _, ok := appNotifChan[user.ID]; !ok {
+		appNotifChan[user.ID] = make(chan Notif, 5)
 	}
 	for {
 		select {
 		case <-clientGone:
 			fmt.Println("Client disconnected")
 			return
-		case notif := <-AppNotifChan[user.ID]:
+		case notif := <-appNotifChan[user.ID]:
 			response, err := getAppNotification(ctx, user, notif.Ride, notif.RideStatusID, notif.RideStatus)
 			if err != nil {
 				return
@@ -1229,7 +1104,7 @@ func appGetNearbyChairs(w http.ResponseWriter, r *http.Request) {
 		// 	writeError(w, http.StatusInternalServerError, err)
 		// 	return
 		// }
-		LatestChairLoc, ok := LatestChairLoc.Load(chair.ID)
+		LatestChairLoc, ok := latestChairLocation.Load(chair.ID)
 		if !ok {
 			continue
 		}

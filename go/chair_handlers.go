@@ -123,7 +123,7 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 	// 	chairLocationID, chair.ID, req.Latitude, req.Longitude,
 	// );
 	now := time.Now()
-	lazyDo2, err = createChairLoc(ctx, tx, chairLocationID, chair.ID, req.Latitude, req.Longitude, now)
+	lazyDo2, err = createChairLocation(ctx, tx, chairLocationID, chair.ID, req.Latitude, req.Longitude, now)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
@@ -148,7 +148,7 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 	// 		return
 	// 	}
 	// }
-	rideIns, err := getLatestRideByChairID(ctx, tx, chair.ID)
+	rideIns, err := getLatestRide(ctx, tx, chair.ID)
 	if err != nil {
 		if !errors.Is(err, sql.ErrNoRows) {
 			writeError(w, http.StatusInternalServerError, err)
@@ -240,8 +240,8 @@ func chairGetNotification(w http.ResponseWriter, r *http.Request) {
 
 	// t := time.NewTicker(time.Second)
 	// defer t.Stop()
-	if _, ok := ChairNotifChan[chair.ID]; !ok {
-		ChairNotifChan[chair.ID] = make(chan Notif, 5)
+	if _, ok := chairNotifChan[chair.ID]; !ok {
+		chairNotifChan[chair.ID] = make(chan Notif, 5)
 	}
 	for {
 		fmt.Printf("[DEBUG3] chairGetNotification loop\n")
@@ -250,7 +250,7 @@ func chairGetNotification(w http.ResponseWriter, r *http.Request) {
 			fmt.Println("Client disconnected")
 			return
 		// case <-t.C:
-		case notif := <-ChairNotifChan[chair.ID]:
+		case notif := <-chairNotifChan[chair.ID]:
 			fmt.Printf("[DEBUG3] chairGetNotification 01\n")
 			response, err := getChairNotification(ctx, chair, notif.Ride)
 			if err != nil {
