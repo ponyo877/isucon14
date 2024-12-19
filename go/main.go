@@ -11,7 +11,6 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
-	"sync"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -152,14 +151,7 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 			log.Printf("failed to communicate with pprotein: %v", err)
 		}
 	}()
-	latestRideStatusCache = sync.Map{}
-	latestRideCache = sync.Map{}
-	latestChairLocation = sync.Map{}
-	chairStatsCache = sync.Map{}
-	chairTotalDistanceCache = sync.Map{}
-	chairSpeedbyName = map[string]int{}
-	appNotifChan = make(map[string]chan Notif)
-	chairNotifChan = make(map[string]chan Notif)
+	initCache()
 
 	chairLocations := []ChairLocation{}
 	if err := db.SelectContext(ctx, &chairLocations, "SELECT * FROM chair_locations ORDER BY created_at"); err != nil {
