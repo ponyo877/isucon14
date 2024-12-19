@@ -62,8 +62,8 @@ func internalGetMatching(w http.ResponseWriter, r *http.Request) {
 			cLoc := getLatestChairLocation(c.ID)
 			distance := calculateDistance(cLoc.Latitude, cLoc.Longitude, r.PickupLatitude, r.PickupLongitude)
 			speed := 1
-			if s, ok := chairSpeedbyName[c.Model]; ok {
-				speed = s
+			if s, ok := chairSpeedbyName.Load(c.Model); ok {
+				speed = s.(int)
 			}
 			time := distance / speed
 			mcf.AddEdge(i+1, len(chairs)+j+1, 1, time)
@@ -112,10 +112,12 @@ func internalGetMatching(w http.ResponseWriter, r *http.Request) {
 		}
 		chairID := chairs[e.From()-1].ID
 		ride := rides[e.To()-len(chairs)-1]
-		if _, ok := chairNotifChan[chairID]; !ok {
-			chairNotifChan[chairID] = make(chan Notif, 5)
+		chairChan, ok := chairNotifChan.Load(chairID)
+		if !ok {
+			chairNotifChan.Store(chairID, make(chan Notif, 5))
+			chairChan, _ = chairNotifChan.Load(chairID)
 		}
-		chairNotifChan[chairID] <- Notif{
+		chairChan.(chan Notif) <- Notif{
 			Ride: &ride,
 		}
 	}

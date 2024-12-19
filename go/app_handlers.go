@@ -685,14 +685,16 @@ func appGetNotification(w http.ResponseWriter, r *http.Request) {
 
 	clientGone := ctx.Done()
 	rc := http.NewResponseController(w)
-	if _, ok := appNotifChan[user.ID]; !ok {
-		appNotifChan[user.ID] = make(chan Notif, 5)
+	appChan, ok := appNotifChan.Load(user.ID)
+	if !ok {
+		appNotifChan.Store(user.ID, make(chan Notif, 5))
+		appChan, _ = appNotifChan.Load(user.ID)
 	}
 	for {
 		select {
 		case <-clientGone:
 			return
-		case notif := <-appNotifChan[user.ID]:
+		case notif := <-appChan.(chan Notif):
 			response, err := getAppNotification(ctx, user, notif.Ride, notif.RideStatusID, notif.RideStatus)
 			if err != nil {
 				return

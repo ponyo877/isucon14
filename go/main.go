@@ -159,8 +159,7 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, cl := range chairLocations {
-		// latestChairLocation.Store(cl.ChairID, cl)
-		lazyDo, _ := createChairLocation(ctx, nil, cl.ID, cl.ChairID, cl.Latitude, cl.Longitude, cl.CreatedAt)
+		lazyDo, _ := createChairLocation(cl.ID, cl.ChairID, cl.Latitude, cl.Longitude, cl.CreatedAt)
 		lazyDo()
 	}
 
@@ -170,7 +169,7 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, cm := range chairModels {
-		chairSpeedbyName[cm.Name] = cm.Speed
+		chairSpeedbyName.Store(cm.Name, cm.Speed)
 	}
 	writeJSON(w, http.StatusOK, postInitializeResponse{Language: "go"})
 }

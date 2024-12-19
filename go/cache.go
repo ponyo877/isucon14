@@ -36,9 +36,9 @@ var (
 	latestChairLocation     = sync.Map{}
 	chairStatsCache         = sync.Map{}
 	chairTotalDistanceCache = sync.Map{}
-	chairSpeedbyName        = map[string]int{}
-	appNotifChan            = make(map[string]chan Notif)
-	chairNotifChan          = make(map[string]chan Notif)
+	chairSpeedbyName        = sync.Map{}
+	appNotifChan            = sync.Map{}
+	chairNotifChan          = sync.Map{}
 )
 
 func initCache() {
@@ -47,9 +47,9 @@ func initCache() {
 	latestChairLocation = sync.Map{}
 	chairStatsCache = sync.Map{}
 	chairTotalDistanceCache = sync.Map{}
-	chairSpeedbyName = map[string]int{}
-	appNotifChan = make(map[string]chan Notif)
-	chairNotifChan = make(map[string]chan Notif)
+	chairSpeedbyName = sync.Map{}
+	appNotifChan = sync.Map{}
+	chairNotifChan = sync.Map{}
 }
 
 func getLatestRideStatus(ctx context.Context, tx executableGet, rideID string) (string, error) {
@@ -77,15 +77,19 @@ func createRideStatus(ctx context.Context, tx *sqlx.Tx, ride *Ride, status strin
 			RideStatusID: id,
 			RideStatus:   status,
 		}
-		if _, ok := appNotifChan[ride.UserID]; !ok {
-			appNotifChan[ride.UserID] = make(chan Notif, 5)
+		appChan, ok := appNotifChan.Load(ride.UserID)
+		if !ok {
+			appNotifChan.Store(ride.UserID, make(chan Notif, 5))
+			appChan, _ = appNotifChan.Load(ride.UserID)
 		}
-		appNotifChan[ride.UserID] <- notif
+		appChan.(chan Notif) <- notif
 		if ride.ChairID.Valid {
-			if _, ok := chairNotifChan[ride.ChairID.String]; !ok {
-				chairNotifChan[ride.ChairID.String] = make(chan Notif, 5)
+			chairChan, ok := chairNotifChan.Load(ride.ChairID.String)
+			if !ok {
+				chairNotifChan.Store(ride.ChairID.String, make(chan Notif, 5))
+				chairChan, _ = chairNotifChan.Load(ride.ChairID.String)
 			}
-			chairNotifChan[ride.ChairID.String] <- notif
+			chairChan.(chan Notif) <- notif
 		}
 	}
 
@@ -104,12 +108,7 @@ func getLatestRide(ctx context.Context, tx *sqlx.Tx, chairID string) (Ride, erro
 	return *ride, nil
 }
 
-func createChairLocation(ctx context.Context, tx *sqlx.Tx, id, chairID string, latitude, longitude int, now time.Time) (func(), error) {
-	// _, err := tx.ExecContext(
-	// 	ctx,
-	// 	`INSERT INTO chair_locations (id, chair_id, latitude, longitude, created_at) VALUES (?, ?, ?, ?, ?)`,
-	// 	id, chairID, latitude, longitude, now,
-	// )
+func createChairLocation(id, chairID string, latitude, longitude int, now time.Time) (func(), error) {
 	lazyDo := func() {
 		chairLoctionAny, ok := latestChairLocation.Load(chairID)
 		if ok {

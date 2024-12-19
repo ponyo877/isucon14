@@ -118,7 +118,7 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 
 	chairLocationID := ulid.Make().String()
 	now := time.Now()
-	lazyDo2, err = createChairLocation(ctx, tx, chairLocationID, chair.ID, req.Latitude, req.Longitude, now)
+	lazyDo2, err = createChairLocation(chairLocationID, chair.ID, req.Latitude, req.Longitude, now)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
@@ -209,14 +209,16 @@ func chairGetNotification(w http.ResponseWriter, r *http.Request) {
 	clientGone := ctx.Done()
 	rc := http.NewResponseController(w)
 
-	if _, ok := chairNotifChan[chair.ID]; !ok {
-		chairNotifChan[chair.ID] = make(chan Notif, 5)
+	chairChan, ok := chairNotifChan.Load(chair.ID)
+	if !ok {
+		chairNotifChan.Store(chair.ID, make(chan Notif, 5))
+		chairChan, _ = chairNotifChan.Load(chair.ID)
 	}
 	for {
 		select {
 		case <-clientGone:
 			return
-		case notif := <-chairNotifChan[chair.ID]:
+		case notif := <-chairChan.(chan Notif):
 			response, err := getChairNotification(ctx, chair, notif.Ride)
 			if err != nil {
 				return
