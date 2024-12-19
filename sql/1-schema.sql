@@ -147,6 +147,7 @@ CREATE TABLE coupons
   used_by    VARCHAR(26)  NULL COMMENT 'クーポンが適用されたライドのID',
   PRIMARY KEY (user_id, code),
   INDEX idx_used_by (used_by),
+  INDEX idx_code (code),
   INDEX idx_user_id_used_by (user_id, used_by),
   INDEX idx_user_id_created_at (user_id, created_at)
 )
