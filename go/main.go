@@ -159,7 +159,9 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, cl := range chairLocations {
-		latestChairLocation.Store(cl.ChairID, cl)
+		// latestChairLocation.Store(cl.ChairID, cl)
+		lazyDo, _ := createChairLocation(ctx, nil, cl.ID, cl.ChairID, cl.Latitude, cl.Longitude, cl.CreatedAt)
+		lazyDo()
 	}
 
 	chairModels := []ChairModel{}

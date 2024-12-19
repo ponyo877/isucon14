@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
 
@@ -21,6 +20,16 @@ type ChairStats struct {
 	TotalEvaluation int
 }
 
+type Location struct {
+	Latitude  int
+	Longitude int
+}
+
+type TotalDistance struct {
+	TotalDistance int
+	UpdatedAt     time.Time
+}
+
 var (
 	latestRideStatusCache   = sync.Map{}
 	latestRideCache         = sync.Map{}
@@ -32,9 +41,15 @@ var (
 	chairNotifChan          = make(map[string]chan Notif)
 )
 
-type Loc struct {
-	Latitude  int
-	Longitude int
+func initCache() {
+	latestRideStatusCache = sync.Map{}
+	latestRideCache = sync.Map{}
+	latestChairLocation = sync.Map{}
+	chairStatsCache = sync.Map{}
+	chairTotalDistanceCache = sync.Map{}
+	chairSpeedbyName = map[string]int{}
+	appNotifChan = make(map[string]chan Notif)
+	chairNotifChan = make(map[string]chan Notif)
 }
 
 func getLatestRideStatus(ctx context.Context, tx executableGet, rideID string) (string, error) {
@@ -66,13 +81,11 @@ func createRideStatus(ctx context.Context, tx *sqlx.Tx, ride *Ride, status strin
 			appNotifChan[ride.UserID] = make(chan Notif, 5)
 		}
 		appNotifChan[ride.UserID] <- notif
-		fmt.Printf("[DEBUG3] createRideStatus 03 st: chairID: %v\n", ride.ChairID.String)
 		if ride.ChairID.Valid {
 			if _, ok := chairNotifChan[ride.ChairID.String]; !ok {
 				chairNotifChan[ride.ChairID.String] = make(chan Notif, 5)
 			}
 			chairNotifChan[ride.ChairID.String] <- notif
-			fmt.Printf("[DEBUG3] createRideStatus 03 ed: chairID: %v\n", ride.ChairID.String)
 		}
 	}
 
@@ -92,12 +105,26 @@ func getLatestRide(ctx context.Context, tx *sqlx.Tx, chairID string) (Ride, erro
 }
 
 func createChairLocation(ctx context.Context, tx *sqlx.Tx, id, chairID string, latitude, longitude int, now time.Time) (func(), error) {
-	_, err := tx.ExecContext(
-		ctx,
-		`INSERT INTO chair_locations (id, chair_id, latitude, longitude, created_at) VALUES (?, ?, ?, ?, ?)`,
-		id, chairID, latitude, longitude, now,
-	)
+	// _, err := tx.ExecContext(
+	// 	ctx,
+	// 	`INSERT INTO chair_locations (id, chair_id, latitude, longitude, created_at) VALUES (?, ?, ?, ?, ?)`,
+	// 	id, chairID, latitude, longitude, now,
+	// )
 	lazyDo := func() {
+		chairLoctionAny, ok := latestChairLocation.Load(chairID)
+		if ok {
+			before := chairLoctionAny.(ChairLocation)
+			distance := calculateDistance(before.Latitude, before.Longitude, latitude, longitude)
+			currentTotalDistance := 0
+			if currentAny, ok := chairTotalDistanceCache.Load(chairID); ok {
+				current := currentAny.(TotalDistance)
+				currentTotalDistance = current.TotalDistance
+			}
+			chairTotalDistanceCache.Store(chairID, TotalDistance{
+				TotalDistance: currentTotalDistance + distance,
+				UpdatedAt:     now,
+			})
+		}
 		latestChairLocation.Store(chairID, ChairLocation{
 			ID:        id,
 			ChairID:   chairID,
@@ -106,7 +133,7 @@ func createChairLocation(ctx context.Context, tx *sqlx.Tx, id, chairID string, l
 			CreatedAt: now,
 		})
 	}
-	return lazyDo, err
+	return lazyDo, nil
 }
 
 func getLatestChairLocation(chairID string) ChairLocation {
