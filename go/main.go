@@ -187,7 +187,6 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 	for _, rs := range rideStatuses {
 		latestRideStatusCache.Store(rs.RideID, rs.Status)
 	}
-	// SELECT * FROM rides WHERE chair_id = ? ORDER BY updated_at DESC LIMIT 1
 	rides := []Ride{}
 	if err := db.SelectContext(ctx, &rides, `
 		SELECT r1.* FROM rides r1

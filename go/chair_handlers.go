@@ -124,12 +124,7 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 	if ok {
 		rideIns := rideAny.(Ride)
 		ride = &rideIns
-		status, err := getLatestRideStatus(ctx, nil, ride.ID)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
-
+		status := getLatestRideStatus(ride.ID)
 		if status != "COMPLETED" && status != "CANCELED" {
 			if req.Latitude == ride.PickupLatitude && req.Longitude == ride.PickupLongitude && status == "ENROUTE" {
 				lazyDo, err = createRideStatusDB(ctx, db, ride, "PICKUP")
@@ -219,13 +214,10 @@ func chairGetNotification(w http.ResponseWriter, r *http.Request) {
 }
 
 func getChairNotification(ctx context.Context, chair *Chair, ride *Ride) (*chairGetNotificationResponse, error) {
-	rideStatus, err := getLatestRideStatus(ctx, nil, ride.ID)
-	if err != nil {
-		return nil, err
-	}
+	rideStatus := getLatestRideStatus(ride.ID)
 
 	user := &User{}
-	err = db.GetContext(ctx, user, "SELECT * FROM users WHERE id = ? FOR SHARE", ride.UserID)
+	err := db.GetContext(ctx, user, "SELECT * FROM users WHERE id = ? FOR SHARE", ride.UserID)
 	if err != nil {
 		return nil, err
 	}
@@ -305,11 +297,7 @@ func chairPostRideStatus(w http.ResponseWriter, r *http.Request) {
 		}
 	// After Picking up user
 	case "CARRYING":
-		status, err := getLatestRideStatus(ctx, tx, ride.ID)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
+		status := getLatestRideStatus(ride.ID)
 		if status != "PICKUP" {
 			writeError(w, http.StatusBadRequest, errors.New("chair has not arrived yet"))
 			return

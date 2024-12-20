@@ -52,15 +52,9 @@ func initCache() {
 	chairNotifChan = sync.Map{}
 }
 
-func getLatestRideStatus(ctx context.Context, tx executableGet, rideID string) (string, error) {
-	if status, ok := latestRideStatusCache.Load(rideID); ok {
-		return status.(string), nil
-	}
-	status := ""
-	if err := tx.GetContext(ctx, &status, `SELECT status FROM ride_statuses WHERE ride_id = ? ORDER BY created_at DESC LIMIT 1`, rideID); err != nil {
-		return "", err
-	}
-	return status, nil
+func getLatestRideStatus(rideID string) string {
+	status, _ := latestRideStatusCache.Load(rideID)
+	return status.(string)
 }
 
 func createRideStatus(ctx context.Context, tx *sqlx.Tx, ride *Ride, status string) (func(), error) {
@@ -127,18 +121,6 @@ func createRideStatusDB(ctx context.Context, db *sqlx.DB, ride *Ride, status str
 	}
 
 	return lazyDo, err
-}
-
-func getLatestRide(ctx context.Context, tx *sqlx.Tx, chairID string) (Ride, error) {
-	if ride, ok := latestRideCache.Load(chairID); ok {
-		return ride.(Ride), nil
-	}
-	ride := &Ride{}
-	if err := tx.GetContext(ctx, ride, `SELECT * FROM rides WHERE chair_id = ? ORDER BY updated_at DESC LIMIT 1`, chairID); err != nil {
-		return Ride{}, err
-	}
-	latestRideCache.Store(chairID, *ride)
-	return *ride, nil
 }
 
 func createChairLocation(id, chairID string, latitude, longitude int, now time.Time) (func(), error) {

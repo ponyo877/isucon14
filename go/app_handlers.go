@@ -221,11 +221,7 @@ func appGetRides(w http.ResponseWriter, r *http.Request) {
 
 	items := []getAppRidesResponseItem{}
 	for _, ride := range rides {
-		status, err := getLatestRideStatus(ctx, tx, ride.ID)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
+		status := getLatestRideStatus(ride.ID)
 		if status != "COMPLETED" {
 			continue
 		}
@@ -323,11 +319,7 @@ func appPostRides(w http.ResponseWriter, r *http.Request) {
 
 	continuingRideCount := 0
 	for _, ride := range rides {
-		status, err := getLatestRideStatus(ctx, tx, ride.ID)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
+		status := getLatestRideStatus(ride.ID)
 		if status != "COMPLETED" {
 			continuingRideCount++
 		}
@@ -547,11 +539,7 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	status, err := getLatestRideStatus(ctx, tx, ride.ID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
+	status := getLatestRideStatus(ride.ID)
 
 	if status != "ARRIVED" {
 		writeError(w, http.StatusBadRequest, errors.New("not arrived yet"))
