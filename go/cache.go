@@ -17,7 +17,7 @@ type Notif struct {
 
 type ChairStats struct {
 	RideCount       int
-	TotalEvaluation int
+	TotalEvaluation float64
 }
 
 type Location struct {
@@ -165,8 +165,15 @@ func getChairStatsCache(chairID string) ChairStats {
 }
 
 func addChairStatsCache(chairID string, evaluation int) {
-	stats := getChairStatsCache(chairID)
-	stats.RideCount++
-	stats.TotalEvaluation += evaluation
-	chairStatsCache.Store(chairID, stats)
+	if statsAny, ok := chairStatsCache.Load(chairID); ok {
+		stats := statsAny.(ChairStats)
+		stats.RideCount++
+		stats.TotalEvaluation += float64(evaluation)
+		chairStatsCache.Store(chairID, stats)
+		return
+	}
+	chairStatsCache.Store(chairID, ChairStats{
+		RideCount:       1,
+		TotalEvaluation: float64(evaluation),
+	})
 }

@@ -739,11 +739,7 @@ func getAppNotification(ctx context.Context, user *User, ride *Ride, rideStatusI
 			return nil, err
 		}
 
-		stats, err := getChairStats(ctx, tx, chair.ID)
-		if err != nil {
-			return nil, err
-		}
-
+		stats := getChairStats(chair.ID)
 		response.Data.Chair = &appGetNotificationResponseChair{
 			ID:    chair.ID,
 			Name:  chair.Name,
@@ -758,67 +754,14 @@ func getAppNotification(ctx context.Context, user *User, ride *Ride, rideStatusI
 	return response, nil
 }
 
-func getChairStats(ctx context.Context, tx *sqlx.Tx, chairID string) (appGetNotificationResponseChairStats, error) {
+func getChairStats(chairID string) appGetNotificationResponseChairStats {
 	stats := appGetNotificationResponseChairStats{}
-
-	rides := []Ride{}
-	err := tx.SelectContext(
-		ctx,
-		&rides,
-		`SELECT * FROM rides WHERE chair_id = ? ORDER BY updated_at DESC`,
-		chairID,
-	)
-	if err != nil {
-		return stats, err
+	statsCache := getChairStatsCache(chairID)
+	stats.TotalRidesCount = statsCache.RideCount
+	if statsCache.RideCount > 0 {
+		stats.TotalEvaluationAvg = statsCache.TotalEvaluation / float64(statsCache.RideCount)
 	}
-
-	totalRideCount := 0
-	totalEvaluation := 0.0
-	for _, ride := range rides {
-		rideStatuses := []RideStatus{}
-		err = tx.SelectContext(
-			ctx,
-			&rideStatuses,
-			`SELECT * FROM ride_statuses WHERE ride_id = ? ORDER BY created_at`,
-			ride.ID,
-		)
-		if err != nil {
-			return stats, err
-		}
-
-		var arrivedAt, pickupedAt *time.Time
-		var isCompleted bool
-		for _, status := range rideStatuses {
-			if status.Status == "ARRIVED" {
-				arrivedAt = &status.CreatedAt
-			} else if status.Status == "CARRYING" {
-				pickupedAt = &status.CreatedAt
-			}
-			if status.Status == "COMPLETED" {
-				isCompleted = true
-			}
-		}
-		if arrivedAt == nil || pickupedAt == nil {
-			continue
-		}
-		if !isCompleted {
-			continue
-		}
-
-		totalRideCount++
-		totalEvaluation += float64(*ride.Evaluation)
-	}
-
-	stats.TotalRidesCount = totalRideCount
-	if totalRideCount > 0 {
-		stats.TotalEvaluationAvg = totalEvaluation / float64(totalRideCount)
-	}
-	// statsTmp := getChairStatsCache(ctx, chairID)
-	// return appGetNotificationResponseChairStats{
-	// 	TotalRidesCount:    statsTmp.RideCount,
-	// 	TotalEvaluationAvg: float64(statsTmp.TotalEvaluation) / float64(statsTmp.RideCount),
-	// }, nil
-	return stats, nil
+	return stats
 }
 
 type appGetNearbyChairsResponse struct {
