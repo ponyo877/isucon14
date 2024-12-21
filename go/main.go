@@ -201,6 +201,22 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 	for _, r := range rides {
 		latestRideCache.Store(r.ChairID, r)
 	}
+	rides = []Ride{}
+	if err := db.SelectContext(ctx, &rides, "SELECT * FROM rides ORDER BY updated_at"); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	for _, r := range rides {
+		chairSales := []ChairSale{}
+		if salesAny, ok := chairSaleCache.Load(r.ChairID.String); ok {
+			chairSales = salesAny.([]ChairSale)
+		}
+		chairSales = append(chairSales, ChairSale{
+			Sale:      calculateSale(r),
+			UpdatedAt: r.UpdatedAt,
+		})
+		chairSaleCache.Store(r.ChairID.String, chairSales)
+	}
 	writeJSON(w, http.StatusOK, postInitializeResponse{Language: "go"})
 }
 

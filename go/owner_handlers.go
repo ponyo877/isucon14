@@ -115,40 +115,81 @@ func ownerGetSales(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	res := ownerGetSalesResponse{
+	// res := ownerGetSalesResponse{
+	// 	TotalSales: 0,
+	// }
+	res2 := ownerGetSalesResponse{
 		TotalSales: 0,
 	}
 
-	modelSalesByModel := map[string]int{}
+	// modelSalesByModel := map[string]int{}
+	modelSalesByModel2 := map[string]int{}
 	for _, chair := range chairs {
-		rides := []Ride{}
-		if err := tx.SelectContext(ctx, &rides, "SELECT rides.* FROM rides JOIN ride_statuses ON rides.id = ride_statuses.ride_id WHERE chair_id = ? AND status = 'COMPLETED' AND updated_at BETWEEN ? AND ? + INTERVAL 999 MICROSECOND", chair.ID, since, until); err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
+		// rides := []Ride{}
+		// if err := tx.SelectContext(ctx, &rides, "SELECT rides.* FROM rides JOIN ride_statuses ON rides.id = ride_statuses.ride_id WHERE chair_id = ? AND status = 'COMPLETED' AND updated_at BETWEEN ? AND ? + INTERVAL 999 MICROSECOND", chair.ID, since, until); err != nil {
+		// 	writeError(w, http.StatusInternalServerError, err)
+		// 	return
+		// }
+
+		// sales := sumSales(rides)
+		// res.TotalSales += sales
+
+		// res.Chairs = append(res.Chairs, chairSales{
+		// 	ID:    chair.ID,
+		// 	Name:  chair.Name,
+		// 	Sales: sales,
+		// })
+
+		// modelSalesByModel[chair.Model] += sales
+		if _, ok := modelSalesByModel2[chair.Model]; !ok {
+			modelSalesByModel2[chair.Model] = 0
 		}
-
-		sales := sumSales(rides)
-		res.TotalSales += sales
-
-		res.Chairs = append(res.Chairs, chairSales{
+		salesAny, ok := chairSaleCache.Load(chair.ID)
+		if !ok {
+			res2.Chairs = append(res2.Chairs, chairSales{
+				ID:    chair.ID,
+				Name:  chair.Name,
+				Sales: 0,
+			})
+			continue
+		}
+		sales2 := salesAny.([]ChairSale)
+		sumSales := 0
+		for _, sale := range sales2 {
+			if sale.UpdatedAt.Before(since) || sale.UpdatedAt.After(until.Add(999*time.Microsecond)) {
+				continue
+			}
+			sumSales += sale.Sale
+		}
+		res2.Chairs = append(res2.Chairs, chairSales{
 			ID:    chair.ID,
 			Name:  chair.Name,
-			Sales: sales,
+			Sales: sumSales,
 		})
-
-		modelSalesByModel[chair.Model] += sales
+		res2.TotalSales += sumSales
+		modelSalesByModel2[chair.Model] += sumSales
 	}
 
 	models := []modelSales{}
-	for model, sales := range modelSalesByModel {
+	// for model, sales := range modelSalesByModel {
+	// 	models = append(models, modelSales{
+	// 		Model: model,
+	// 		Sales: sales,
+	// 	})
+	// }
+	// res.Models = models
+	// models = []modelSales{}
+	for model, sales := range modelSalesByModel2 {
 		models = append(models, modelSales{
 			Model: model,
 			Sales: sales,
 		})
 	}
-	res.Models = models
+	res2.Models = models
+	// fmt.Printf("[DEBUG] [OK] res1: %+v\n", res)
+	// fmt.Printf("[DEBUG] [NG] res2: %+v\n", res2)
 
-	writeJSON(w, http.StatusOK, res)
+	writeJSON(w, http.StatusOK, res2)
 }
 
 func sumSales(rides []Ride) int {

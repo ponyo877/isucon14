@@ -350,7 +350,7 @@ func appPostRides(w http.ResponseWriter, r *http.Request) {
 		CreatedAt:            now,
 		UpdatedAt:            now,
 	}
-	lazyDo, err = createRideStatus(ctx, tx, tmpRide, "MATCHING")
+	lazyDo, err = createRideStatus(tmpRide, "MATCHING")
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
@@ -565,7 +565,7 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	lazyDo, err = createRideStatus(ctx, tx, ride, "COMPLETED")
+	lazyDo, err = createRideStatus(ride, "COMPLETED")
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return

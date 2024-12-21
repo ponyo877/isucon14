@@ -1,11 +1,9 @@
 package main
 
 import (
-	"context"
 	"sync"
 	"time"
 
-	"github.com/jmoiron/sqlx"
 	"github.com/oklog/ulid/v2"
 )
 
@@ -30,6 +28,11 @@ type TotalDistance struct {
 	UpdatedAt     time.Time
 }
 
+type ChairSale struct {
+	Sale      int
+	UpdatedAt time.Time
+}
+
 var (
 	latestRideStatusCache   = sync.Map{}
 	latestRideCache         = sync.Map{}
@@ -39,6 +42,7 @@ var (
 	chairSpeedbyName        = sync.Map{}
 	appNotifChan            = sync.Map{}
 	chairNotifChan          = sync.Map{}
+	chairSaleCache          = sync.Map{}
 )
 
 func initCache() {
@@ -50,6 +54,7 @@ func initCache() {
 	chairSpeedbyName = sync.Map{}
 	appNotifChan = sync.Map{}
 	chairNotifChan = sync.Map{}
+	chairSaleCache = sync.Map{}
 }
 
 func getLatestRideStatus(rideID string) string {
@@ -57,13 +62,13 @@ func getLatestRideStatus(rideID string) string {
 	return status.(string)
 }
 
-func createRideStatus(ctx context.Context, tx *sqlx.Tx, ride *Ride, status string) (func(), error) {
+func createRideStatus(ride *Ride, status string) (func(), error) {
 	id := ulid.Make().String()
-	_, err := tx.ExecContext(
-		ctx,
-		`INSERT INTO ride_statuses (id, ride_id, status) VALUES (?, ?, ?)`,
-		id, ride.ID, status,
-	)
+	// _, err := tx.ExecContext(
+	// 	ctx,
+	// 	`INSERT INTO ride_statuses (id, ride_id, status) VALUES (?, ?, ?)`,
+	// 	id, ride.ID, status,
+	// )
 	lazyDo := func() {
 		latestRideStatusCache.Store(ride.ID, status)
 		notif := Notif{
@@ -85,42 +90,20 @@ func createRideStatus(ctx context.Context, tx *sqlx.Tx, ride *Ride, status strin
 			}
 			chairChan.(chan Notif) <- notif
 		}
-	}
-
-	return lazyDo, err
-}
-
-func createRideStatusDB(ctx context.Context, db *sqlx.DB, ride *Ride, status string) (func(), error) {
-	id := ulid.Make().String()
-	_, err := db.ExecContext(
-		ctx,
-		`INSERT INTO ride_statuses (id, ride_id, status) VALUES (?, ?, ?)`,
-		id, ride.ID, status,
-	)
-	lazyDo := func() {
-		latestRideStatusCache.Store(ride.ID, status)
-		notif := Notif{
-			Ride:         ride,
-			RideStatusID: id,
-			RideStatus:   status,
-		}
-		appChan, ok := appNotifChan.Load(ride.UserID)
-		if !ok {
-			appNotifChan.Store(ride.UserID, make(chan Notif, 5))
-			appChan, _ = appNotifChan.Load(ride.UserID)
-		}
-		appChan.(chan Notif) <- notif
-		if ride.ChairID.Valid {
-			chairChan, ok := chairNotifChan.Load(ride.ChairID.String)
-			if !ok {
-				chairNotifChan.Store(ride.ChairID.String, make(chan Notif, 5))
-				chairChan, _ = chairNotifChan.Load(ride.ChairID.String)
+		if status == "COMPLETED" {
+			chairSales := []ChairSale{}
+			if salesAny, ok := chairSaleCache.Load(ride.ChairID.String); ok {
+				chairSales = salesAny.([]ChairSale)
 			}
-			chairChan.(chan Notif) <- notif
+			chairSales = append(chairSales, ChairSale{
+				Sale:      calculateSale(*ride),
+				UpdatedAt: ride.UpdatedAt,
+			})
+			chairSaleCache.Store(ride.ChairID.String, chairSales)
 		}
 	}
 
-	return lazyDo, err
+	return lazyDo, nil
 }
 
 func createChairLocation(id, chairID string, latitude, longitude int, now time.Time) (func(), error) {

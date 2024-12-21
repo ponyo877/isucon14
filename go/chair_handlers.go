@@ -127,7 +127,7 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 		status := getLatestRideStatus(ride.ID)
 		if status != "COMPLETED" && status != "CANCELED" {
 			if req.Latitude == ride.PickupLatitude && req.Longitude == ride.PickupLongitude && status == "ENROUTE" {
-				lazyDo, err = createRideStatusDB(ctx, db, ride, "PICKUP")
+				lazyDo, err = createRideStatus(ride, "PICKUP")
 				if err != nil {
 					writeError(w, http.StatusInternalServerError, err)
 					return
@@ -135,7 +135,7 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 			}
 
 			if req.Latitude == ride.DestinationLatitude && req.Longitude == ride.DestinationLongitude && status == "CARRYING" {
-				lazyDo, err = createRideStatusDB(ctx, db, ride, "ARRIVED")
+				lazyDo, err = createRideStatus(ride, "ARRIVED")
 				if err != nil {
 					writeError(w, http.StatusInternalServerError, err)
 					return
@@ -290,7 +290,7 @@ func chairPostRideStatus(w http.ResponseWriter, r *http.Request) {
 	switch req.Status {
 	// Acknowledge the ride
 	case "ENROUTE":
-		lazyDo, err = createRideStatus(ctx, tx, ride, "ENROUTE")
+		lazyDo, err = createRideStatus(ride, "ENROUTE")
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
@@ -302,7 +302,7 @@ func chairPostRideStatus(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, errors.New("chair has not arrived yet"))
 			return
 		}
-		lazyDo, err = createRideStatus(ctx, tx, ride, "CARRYING")
+		lazyDo, err = createRideStatus(ride, "CARRYING")
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
