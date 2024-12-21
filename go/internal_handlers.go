@@ -11,11 +11,6 @@ import (
 
 var mu sync.Mutex
 
-// type MatchPair struct {
-// 	chair Chair
-// 	ride  Ride
-// }
-
 // このAPIをインスタンス内から一定間隔で叩かせることで、椅子とライドをマッチングさせる
 var isProcessing bool
 
@@ -81,7 +76,6 @@ func internalGetMatching(w http.ResponseWriter, r *http.Request) {
 	// calc min path
 	mcf.FlowL(0, n-1, mcf.Min(len(chairs), len(rides)))
 	// match
-	// matchPair := []MatchPair{}
 	edges := mcf.Edges()
 	isInit := true
 	var chairIDsComma, rideIDsComma string
@@ -100,21 +94,7 @@ func internalGetMatching(w http.ResponseWriter, r *http.Request) {
 		}
 		chairIDsComma += fmt.Sprintf("'%s'", chair.ID)
 		rideIDsComma += fmt.Sprintf("'%s'", ride.ID)
-		// matchPair = append(matchPair, MatchPair{chair, ride})
 	}
-	// var chairIDsComma, rideIDsComma string
-	// for i, mp := range matchPair {
-	// 	if i > 0 {
-	// 		chairIDsComma += ","
-	// 		rideIDsComma += ","
-	// 	}
-	// 	chairIDsComma += fmt.Sprintf("'%s'", mp.chairID)
-	// 	rideIDsComma += fmt.Sprintf("'%s'", mp.rideID)
-	// }
-	// if _, err := db.ExecContext(ctx, fmt.Sprintf("UPDATE chairs SET is_completed = 0 WHERE id IN (%s)", chairIDsComma)); err != nil {
-	// 	writeError(w, http.StatusInternalServerError, err)
-	// 	return
-	// }
 	if _, err := db.ExecContext(ctx, fmt.Sprintf("UPDATE rides SET chair_id = ELT(FIELD(id, %s), %s) WHERE id IN (%s)", rideIDsComma, chairIDsComma, rideIDsComma)); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
