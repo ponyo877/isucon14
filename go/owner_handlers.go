@@ -110,51 +110,24 @@ func ownerGetSales(w http.ResponseWriter, r *http.Request) {
 
 	owner := r.Context().Value("owner").(*Owner)
 
-	// tx, err := db.Beginx()
-	// if err != nil {
-	// 	writeError(w, http.StatusInternalServerError, err)
-	// 	return
-	// }
-	// defer tx.Rollback()
-
 	chairs := []Chair{}
 	if err := db.SelectContext(ctx, &chairs, "SELECT * FROM chairs WHERE owner_id = ?", owner.ID); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
 
-	// res := ownerGetSalesResponse{
-	// 	TotalSales: 0,
-	// }
-	res2 := ownerGetSalesResponse{
+	res := ownerGetSalesResponse{
 		TotalSales: 0,
 	}
 
-	// modelSalesByModel := map[string]int{}
-	modelSalesByModel2 := map[string]int{}
+	modelSalesByModel := map[string]int{}
 	for _, chair := range chairs {
-		// rides := []Ride{}
-		// if err := tx.SelectContext(ctx, &rides, "SELECT rides.* FROM rides JOIN ride_statuses ON rides.id = ride_statuses.ride_id WHERE chair_id = ? AND status = 'COMPLETED' AND updated_at BETWEEN ? AND ? + INTERVAL 999 MICROSECOND", chair.ID, since, until); err != nil {
-		// 	writeError(w, http.StatusInternalServerError, err)
-		// 	return
-		// }
-
-		// sales := sumSales(rides)
-		// res.TotalSales += sales
-
-		// res.Chairs = append(res.Chairs, chairSales{
-		// 	ID:    chair.ID,
-		// 	Name:  chair.Name,
-		// 	Sales: sales,
-		// })
-
-		// modelSalesByModel[chair.Model] += sales
-		if _, ok := modelSalesByModel2[chair.Model]; !ok {
-			modelSalesByModel2[chair.Model] = 0
+		if _, ok := modelSalesByModel[chair.Model]; !ok {
+			modelSalesByModel[chair.Model] = 0
 		}
 		salesAny, ok := chairSaleCache.Load(chair.ID)
 		if !ok {
-			res2.Chairs = append(res2.Chairs, chairSales{
+			res.Chairs = append(res.Chairs, chairSales{
 				ID:    chair.ID,
 				Name:  chair.Name,
 				Sales: 0,
@@ -169,32 +142,24 @@ func ownerGetSales(w http.ResponseWriter, r *http.Request) {
 			}
 			sumSales += sale.Sale
 		}
-		res2.Chairs = append(res2.Chairs, chairSales{
+		res.Chairs = append(res.Chairs, chairSales{
 			ID:    chair.ID,
 			Name:  chair.Name,
 			Sales: sumSales,
 		})
-		res2.TotalSales += sumSales
-		modelSalesByModel2[chair.Model] += sumSales
+		res.TotalSales += sumSales
+		modelSalesByModel[chair.Model] += sumSales
 	}
 
 	models := []modelSales{}
-	// for model, sales := range modelSalesByModel {
-	// 	models = append(models, modelSales{
-	// 		Model: model,
-	// 		Sales: sales,
-	// 	})
-	// }
-	// res.Models = models
-	// models = []modelSales{}
-	for model, sales := range modelSalesByModel2 {
+	for model, sales := range modelSalesByModel {
 		models = append(models, modelSales{
 			Model: model,
 			Sales: sales,
 		})
 	}
-	res2.Models = models
-	writeJSON(w, http.StatusOK, res2)
+	res.Models = models
+	writeJSON(w, http.StatusOK, res)
 }
 
 func sumSales(rides []Ride) int {
@@ -260,7 +225,7 @@ func ownerGetChairs(w http.ResponseWriter, r *http.Request) {
 			ID:            chair.ID,
 			Name:          chair.Name,
 			Model:         chair.Model,
-			Active:        chair.IsActive,
+			Active:        chair.IsActive, // 初回以降更新してないのになぜか通る
 			RegisteredAt:  chair.CreatedAt.UnixMilli(),
 			TotalDistance: totalDistance,
 		}

@@ -94,12 +94,6 @@ func chairPostActivity(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-
-	_, err := db.ExecContext(ctx, "UPDATE chairs SET is_active = ? WHERE id = ?", req.IsActive, chair.ID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
 	if req.IsActive {
 		freeChairsCache.Add(*chair)
 	} else {
@@ -239,11 +233,6 @@ func getChairNotification(ctx context.Context, chair *Chair, ride *Ride) (*chair
 	err := db.GetContext(ctx, user, "SELECT * FROM users WHERE id = ? FOR SHARE", ride.UserID)
 	if err != nil {
 		return nil, err
-	}
-	if rideStatus == "COMPLETED" {
-		if _, err = db.ExecContext(ctx, "UPDATE chairs SET is_completed = 1 WHERE id = ?", ride.ChairID.String); err != nil {
-			return nil, err
-		}
 	}
 
 	return &chairGetNotificationResponse{

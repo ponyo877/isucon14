@@ -11,10 +11,10 @@ import (
 
 var mu sync.Mutex
 
-type MatchPair struct {
-	chairID string
-	rideID  string
-}
+// type MatchPair struct {
+// 	chair Chair
+// 	ride  Ride
+// }
 
 // このAPIをインスタンス内から一定間隔で叩かせることで、椅子とライドをマッチングさせる
 var isProcessing bool
@@ -81,34 +81,45 @@ func internalGetMatching(w http.ResponseWriter, r *http.Request) {
 	// calc min path
 	mcf.FlowL(0, n-1, mcf.Min(len(chairs), len(rides)))
 	// match
-	matchPair := []MatchPair{}
-	for _, e := range mcf.Edges() {
+	// matchPair := []MatchPair{}
+	edges := mcf.Edges()
+	isInit := true
+	var chairIDsComma, rideIDsComma string
+	for _, e := range edges {
 		// 流量のあるEdgeだけを見る(source, sinkは除く)
 		if e.Flow() == 0 || e.From() == 0 || e.To() == n-1 {
 			continue
 		}
-		chairID := chairs[e.From()-1].ID
-		rideID := rides[e.To()-len(chairs)-1].ID
-		matchPair = append(matchPair, MatchPair{chairID, rideID})
-	}
-	var chairIDsComma, rideIDsComma string
-	for i, mp := range matchPair {
-		if i > 0 {
+		chair := chairs[e.From()-1]
+		ride := rides[e.To()-len(chairs)-1]
+		if isInit {
+			isInit = false
+		} else {
 			chairIDsComma += ","
 			rideIDsComma += ","
 		}
-		chairIDsComma += fmt.Sprintf("'%s'", mp.chairID)
-		rideIDsComma += fmt.Sprintf("'%s'", mp.rideID)
+		chairIDsComma += fmt.Sprintf("'%s'", chair.ID)
+		rideIDsComma += fmt.Sprintf("'%s'", ride.ID)
+		// matchPair = append(matchPair, MatchPair{chair, ride})
 	}
-	if _, err := db.ExecContext(ctx, fmt.Sprintf("UPDATE chairs SET is_completed = 0 WHERE id IN (%s)", chairIDsComma)); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
+	// var chairIDsComma, rideIDsComma string
+	// for i, mp := range matchPair {
+	// 	if i > 0 {
+	// 		chairIDsComma += ","
+	// 		rideIDsComma += ","
+	// 	}
+	// 	chairIDsComma += fmt.Sprintf("'%s'", mp.chairID)
+	// 	rideIDsComma += fmt.Sprintf("'%s'", mp.rideID)
+	// }
+	// if _, err := db.ExecContext(ctx, fmt.Sprintf("UPDATE chairs SET is_completed = 0 WHERE id IN (%s)", chairIDsComma)); err != nil {
+	// 	writeError(w, http.StatusInternalServerError, err)
+	// 	return
+	// }
 	if _, err := db.ExecContext(ctx, fmt.Sprintf("UPDATE rides SET chair_id = ELT(FIELD(id, %s), %s) WHERE id IN (%s)", rideIDsComma, chairIDsComma, rideIDsComma)); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	for _, e := range mcf.Edges() {
+	for _, e := range edges {
 		// 流量のあるEdgeだけを見る(source, sinkは除く)
 		if e.Flow() == 0 || e.From() == 0 || e.To() == n-1 {
 			continue
