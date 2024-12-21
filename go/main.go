@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"sync"
 
 	"github.com/go-json-experiment/json"
 
@@ -71,7 +72,7 @@ func setup() http.Handler {
 		panic(err)
 	}
 	db = _db
-
+	mu = sync.Mutex{}
 	db.SetMaxOpenConns(64)
 	db.SetMaxIdleConns(64)
 

@@ -194,9 +194,6 @@ func ownerGetSales(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	res2.Models = models
-	// fmt.Printf("[DEBUG] [OK] res1: %+v\n", res)
-	// fmt.Printf("[DEBUG] [NG] res2: %+v\n", res2)
-
 	writeJSON(w, http.StatusOK, res2)
 }
 

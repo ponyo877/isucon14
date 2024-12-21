@@ -100,6 +100,11 @@ func chairPostActivity(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+	if req.IsActive {
+		freeChairsCache.Add(*chair)
+	} else {
+		freeChairsCache.Remove(chair.ID)
+	}
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -219,6 +224,9 @@ func chairGetNotification(w http.ResponseWriter, r *http.Request) {
 			err = rc.Flush()
 			if err != nil {
 				return
+			}
+			if notif.RideStatus == "COMPLETED" {
+				freeChairsCache.Add(*chair)
 			}
 		}
 	}

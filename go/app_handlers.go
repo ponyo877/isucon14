@@ -787,7 +787,6 @@ type appGetNearbyChairsResponseChair struct {
 }
 
 func appGetNearbyChairs(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
 	latStr := r.URL.Query().Get("latitude")
 	lonStr := r.URL.Query().Get("longitude")
 	distanceStr := r.URL.Query().Get("distance")
@@ -820,24 +819,9 @@ func appGetNearbyChairs(w http.ResponseWriter, r *http.Request) {
 	coordinate := Coordinate{Latitude: lat, Longitude: lon}
 	nearbyChairs := []appGetNearbyChairsResponseChair{}
 
-	// tx, err := db.Beginx()
-	// if err != nil {
-	// 	writeError(w, http.StatusInternalServerError, err)
-	// 	return
-	// }
-	// defer tx.Rollback()
+	chairs := freeChairsCache.List()
 
-	activeChairs := []Chair{}
-	if err := db.SelectContext(ctx, &activeChairs, `
-		select *
-		from chairs
-		where is_completed = 1
-		and   is_active = 1`); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-
-	for _, chair := range activeChairs {
+	for _, chair := range chairs {
 		LatestChairLoc, ok := latestChairLocation.Load(chair.ID)
 		if !ok {
 			continue

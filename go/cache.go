@@ -46,6 +46,7 @@ var (
 	chairAccessTokenCache   = sync.Map{}
 	appAccessTokenCache     = sync.Map{}
 	ownerAccessTokenCache   = sync.Map{}
+	freeChairsCache         = NewFreeChairs()
 )
 
 func initCache() {
@@ -61,6 +62,7 @@ func initCache() {
 	chairAccessTokenCache = sync.Map{}
 	appAccessTokenCache = sync.Map{}
 	ownerAccessTokenCache = sync.Map{}
+	freeChairsCache = NewFreeChairs()
 }
 
 func getLatestRideStatus(rideID string) string {
@@ -192,4 +194,38 @@ func getOwnerAccessToken(token string) (Owner, bool) {
 
 func createOwnerAccessToken(token string, owner Owner) {
 	ownerAccessTokenCache.Store(token, owner)
+}
+
+type FreeChairs struct {
+	cache map[string]Chair
+	mu    sync.Mutex
+}
+
+func NewFreeChairs() *FreeChairs {
+	return &FreeChairs{
+		cache: map[string]Chair{},
+		mu:    sync.Mutex{},
+	}
+}
+
+func (f *FreeChairs) List() []Chair {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	chairs := []Chair{}
+	for _, v := range f.cache {
+		chairs = append(chairs, v)
+	}
+	return chairs
+}
+
+func (f *FreeChairs) Add(chair Chair) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.cache[chair.ID] = chair
+}
+
+func (f *FreeChairs) Remove(chairID string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.cache, chairID)
 }

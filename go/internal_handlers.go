@@ -17,23 +17,26 @@ type MatchPair struct {
 }
 
 // このAPIをインスタンス内から一定間隔で叩かせることで、椅子とライドをマッチングさせる
+var isProcessing bool
+
 func internalGetMatching(w http.ResponseWriter, r *http.Request) {
-	// 複数スレッドで同時実行されないように排他制御
-	if !mu.TryLock() {
-		w.WriteHeader(http.StatusNoContent)
+	mu.Lock()
+	if isProcessing {
+		mu.Unlock()
+		w.WriteHeader(http.StatusForbidden)
 		return
 	}
-	defer mu.Unlock()
+	isProcessing = true
+	mu.Unlock()
+
+	defer func() {
+		mu.Lock()
+		isProcessing = false
+		mu.Unlock()
+	}()
+
 	ctx := r.Context()
-	var chairs []Chair
-	if err := db.SelectContext(ctx, &chairs, `
-		select *
-		from chairs
-		where is_completed = 1
-		and   is_active = 1`); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
+	chairs := freeChairsCache.List()
 	if len(chairs) == 0 {
 		w.WriteHeader(http.StatusNoContent)
 		return
@@ -112,6 +115,7 @@ func internalGetMatching(w http.ResponseWriter, r *http.Request) {
 		}
 		chairID := chairs[e.From()-1].ID
 		ride := rides[e.To()-len(chairs)-1]
+		freeChairsCache.Remove(chairID)
 		ride.ChairID = sql.NullString{String: chairID, Valid: true}
 		latestRideCache.Store(chairID, ride)
 		chairChan, ok := chairNotifChan.Load(chairID)
