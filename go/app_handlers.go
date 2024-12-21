@@ -810,15 +810,15 @@ func appGetNearbyChairs(w http.ResponseWriter, r *http.Request) {
 	coordinate := Coordinate{Latitude: lat, Longitude: lon}
 	nearbyChairs := []appGetNearbyChairsResponseChair{}
 
-	tx, err := db.Beginx()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-	defer tx.Rollback()
+	// tx, err := db.Beginx()
+	// if err != nil {
+	// 	writeError(w, http.StatusInternalServerError, err)
+	// 	return
+	// }
+	// defer tx.Rollback()
 
 	activeChairs := []Chair{}
-	if err := tx.SelectContext(ctx, &activeChairs, `
+	if err := db.SelectContext(ctx, &activeChairs, `
 		select *
 		from chairs
 		where is_completed = 1

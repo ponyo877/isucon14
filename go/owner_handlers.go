@@ -102,15 +102,15 @@ func ownerGetSales(w http.ResponseWriter, r *http.Request) {
 
 	owner := r.Context().Value("owner").(*Owner)
 
-	tx, err := db.Beginx()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-	defer tx.Rollback()
+	// tx, err := db.Beginx()
+	// if err != nil {
+	// 	writeError(w, http.StatusInternalServerError, err)
+	// 	return
+	// }
+	// defer tx.Rollback()
 
 	chairs := []Chair{}
-	if err := tx.SelectContext(ctx, &chairs, "SELECT * FROM chairs WHERE owner_id = ?", owner.ID); err != nil {
+	if err := db.SelectContext(ctx, &chairs, "SELECT * FROM chairs WHERE owner_id = ?", owner.ID); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
