@@ -75,11 +75,11 @@ func executeUserTransaction(ctx context.Context, req *appPostUsersRequest, userI
 		return err
 	}
 	defer tx.Rollback()
-
+	now := time.Now()
 	_, err = tx.ExecContext(
 		ctx,
-		"INSERT INTO users (id, username, firstname, lastname, date_of_birth, access_token, invitation_code) VALUES (?, ?, ?, ?, ?, ?, ?)",
-		userID, req.Username, req.FirstName, req.LastName, req.DateOfBirth, accessToken, invitationCode,
+		"INSERT INTO users (id, username, firstname, lastname, date_of_birth, access_token, invitation_code, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		userID, req.Username, req.FirstName, req.LastName, req.DateOfBirth, accessToken, invitationCode, now, now,
 	)
 	if err != nil {
 		return err
@@ -140,6 +140,16 @@ func executeUserTransaction(ctx context.Context, req *appPostUsersRequest, userI
 	if err := tx.Commit(); err != nil {
 		return err
 	}
+	createAppAccessToken(accessToken, User{
+		ID:             userID,
+		Username:       req.Username,
+		Firstname:      req.FirstName,
+		Lastname:       req.LastName,
+		DateOfBirth:    req.DateOfBirth,
+		InvitationCode: invitationCode,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	})
 	return nil
 }
 

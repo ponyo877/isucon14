@@ -43,6 +43,9 @@ var (
 	appNotifChan            = sync.Map{}
 	chairNotifChan          = sync.Map{}
 	chairSaleCache          = sync.Map{}
+	chairAccessTokenCache   = sync.Map{}
+	appAccessTokenCache     = sync.Map{}
+	ownerAccessTokenCache   = sync.Map{}
 )
 
 func initCache() {
@@ -55,6 +58,9 @@ func initCache() {
 	appNotifChan = sync.Map{}
 	chairNotifChan = sync.Map{}
 	chairSaleCache = sync.Map{}
+	chairAccessTokenCache = sync.Map{}
+	appAccessTokenCache = sync.Map{}
+	ownerAccessTokenCache = sync.Map{}
 }
 
 func getLatestRideStatus(rideID string) string {
@@ -159,4 +165,31 @@ func addChairStatsCache(chairID string, evaluation int) {
 		RideCount:       1,
 		TotalEvaluation: float64(evaluation),
 	})
+}
+
+func getChairAccessToken(token string) (Chair, bool) {
+	chair, ok := chairAccessTokenCache.Load(token)
+	return chair.(Chair), ok
+}
+
+func createChairAccessToken(token string, chair Chair) {
+	chairAccessTokenCache.Store(token, chair)
+}
+
+func getAppAccessToken(token string) (User, bool) {
+	user, ok := appAccessTokenCache.Load(token)
+	return user.(User), ok
+}
+
+func createAppAccessToken(token string, user User) {
+	appAccessTokenCache.Store(token, user)
+}
+
+func getOwnerAccessToken(token string) (Owner, bool) {
+	owner, ok := ownerAccessTokenCache.Load(token)
+	return owner.(Owner), ok
+}
+
+func createOwnerAccessToken(token string, owner Owner) {
+	ownerAccessTokenCache.Store(token, owner)
 }

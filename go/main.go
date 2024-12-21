@@ -217,6 +217,31 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 		})
 		chairSaleCache.Store(r.ChairID.String, chairSales)
 	}
+	users := []User{}
+	if err := db.SelectContext(ctx, &users, "SELECT * FROM users"); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	for _, u := range users {
+		createAppAccessToken(u.AccessToken, u)
+	}
+	chairs := []Chair{}
+	if err := db.SelectContext(ctx, &chairs, "SELECT * FROM chairs"); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	for _, c := range chairs {
+		createChairAccessToken(c.AccessToken, c)
+	}
+	owners := []Owner{}
+	if err := db.SelectContext(ctx, &owners, "SELECT * FROM owners"); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	for _, o := range owners {
+		createOwnerAccessToken(o.AccessToken, o)
+	}
+
 	writeJSON(w, http.StatusOK, postInitializeResponse{Language: "go"})
 }
 
