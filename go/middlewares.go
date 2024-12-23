@@ -15,16 +15,6 @@ func appAuthMiddleware(next http.Handler) http.Handler {
 			return
 		}
 		accessToken := c.Value
-		// user := &User{}
-		// err = db.GetContext(ctx, user, "SELECT * FROM users WHERE access_token = ?", accessToken)
-		// if err != nil {
-		// 	if errors.Is(err, sql.ErrNoRows) {
-		// 		writeError(w, http.StatusUnauthorized, errors.New("invalid access token"))
-		// 		return
-		// 	}
-		// 	writeError(w, http.StatusInternalServerError, err)
-		// 	return
-		// }
 		user, ok := getAppAccessToken(accessToken)
 		if !ok {
 			writeError(w, http.StatusUnauthorized, errors.New("invalid access token"))
@@ -44,15 +34,6 @@ func ownerAuthMiddleware(next http.Handler) http.Handler {
 			return
 		}
 		accessToken := c.Value
-		// owner := &Owner{}
-		// if err := db.GetContext(ctx, owner, "SELECT * FROM owners WHERE access_token = ?", accessToken); err != nil {
-		// 	if errors.Is(err, sql.ErrNoRows) {
-		// 		writeError(w, http.StatusUnauthorized, errors.New("invalid access token"))
-		// 		return
-		// 	}
-		// 	writeError(w, http.StatusInternalServerError, err)
-		// 	return
-		// }
 		owner, ok := getOwnerAccessToken(accessToken)
 		if !ok {
 			writeError(w, http.StatusUnauthorized, errors.New("invalid access token"))
@@ -73,16 +54,6 @@ func chairAuthMiddleware(next http.Handler) http.Handler {
 			return
 		}
 		accessToken := c.Value
-		// chair := &Chair{}
-		// err = db.GetContext(ctx, chair, "SELECT * FROM chairs WHERE access_token = ?", accessToken)
-		// if err != nil {
-		// 	if errors.Is(err, sql.ErrNoRows) {
-		// 		writeError(w, http.StatusUnauthorized, errors.New("invalid access token"))
-		// 		return
-		// 	}
-		// 	writeError(w, http.StatusInternalServerError, err)
-		// 	return
-		// }
 		chair, ok := getChairAccessToken(accessToken)
 		if !ok {
 			writeError(w, http.StatusUnauthorized, errors.New("invalid access token"))
