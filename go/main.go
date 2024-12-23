@@ -233,6 +233,7 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, c := range chairs {
 		createChairAccessToken(c.AccessToken, c)
+		createChairsOwnerIDCache(c.OwnerID, c)
 	}
 	owners := []Owner{}
 	if err := db.SelectContext(ctx, &owners, "SELECT * FROM owners"); err != nil {
@@ -241,6 +242,8 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, o := range owners {
 		createOwnerAccessToken(o.AccessToken, o)
+		createOwnerCache(o.ID, o)
+		createOwnerChairRegisterTokenCache(o.ChairRegisterToken, o)
 	}
 
 	writeJSON(w, http.StatusOK, postInitializeResponse{Language: "go"})

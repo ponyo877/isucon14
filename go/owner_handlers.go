@@ -25,7 +25,6 @@ type ownerPostOwnersResponse struct {
 }
 
 func ownerPostOwners(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
 	req := &ownerPostOwnersRequest{}
 	if err := bindJSON(r, req); err != nil {
 		writeError(w, http.StatusBadRequest, err)
@@ -40,23 +39,17 @@ func ownerPostOwners(w http.ResponseWriter, r *http.Request) {
 	accessToken := secureRandomStr(32)
 	chairRegisterToken := secureRandomStr(32)
 	now := time.Now()
-	_, err := db.ExecContext(
-		ctx,
-		"INSERT INTO owners (id, name, access_token, chair_register_token, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-		ownerID, req.Name, accessToken, chairRegisterToken, now, now,
-	)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-	createOwnerAccessToken(accessToken, Owner{
+	owner := Owner{
 		ID:                 ownerID,
 		Name:               req.Name,
 		AccessToken:        accessToken,
 		ChairRegisterToken: chairRegisterToken,
 		CreatedAt:          now,
 		UpdatedAt:          now,
-	})
+	}
+	createOwnerAccessToken(accessToken, owner)
+	createOwnerCache(ownerID, owner)
+	createOwnerChairRegisterTokenCache(chairRegisterToken, owner)
 
 	http.SetCookie(w, &http.Cookie{
 		Path:  "/",
@@ -88,7 +81,6 @@ type ownerGetSalesResponse struct {
 }
 
 func ownerGetSales(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
 	since := time.Unix(0, 0)
 	until := time.Date(9999, 12, 31, 23, 59, 59, 0, time.UTC)
 	if r.URL.Query().Get("since") != "" {
@@ -110,18 +102,13 @@ func ownerGetSales(w http.ResponseWriter, r *http.Request) {
 
 	owner := r.Context().Value("owner").(*Owner)
 
-	chairs := []Chair{}
-	if err := db.SelectContext(ctx, &chairs, "SELECT * FROM chairs WHERE owner_id = ?", owner.ID); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-
+	chairs2, _ := getChairsOwnerIDCache(owner.ID)
 	res := ownerGetSalesResponse{
 		TotalSales: 0,
 	}
 
 	modelSalesByModel := map[string]int{}
-	for _, chair := range chairs {
+	for _, chair := range chairs2 {
 		if _, ok := modelSalesByModel[chair.Model]; !ok {
 			modelSalesByModel[chair.Model] = 0
 		}
@@ -205,14 +192,9 @@ func ownerGetChairs(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	owner := ctx.Value("owner").(*Owner)
 
-	chairs := []Chair{}
-	if err := db.SelectContext(ctx, &chairs, "SELECT * FROM chairs WHERE owner_id = ?", owner.ID); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-
+	chairs2, _ := getChairsOwnerIDCache(owner.ID)
 	res := ownerGetChairResponse{}
-	for _, chair := range chairs {
+	for _, chair := range chairs2 {
 		totalDistance := 0
 		var totalDistanceUpdatedAt *int64
 		if totalAny, ok := chairTotalDistanceCache.Load(chair.ID); ok {

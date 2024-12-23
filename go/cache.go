@@ -34,19 +34,22 @@ type ChairSale struct {
 }
 
 var (
-	latestRideStatusCache   = sync.Map{}
-	latestRideCache         = sync.Map{}
-	latestChairLocation     = sync.Map{}
-	chairStatsCache         = sync.Map{}
-	chairTotalDistanceCache = sync.Map{}
-	chairSpeedbyName        = sync.Map{}
-	appNotifChan            = sync.Map{}
-	chairNotifChan          = sync.Map{}
-	chairSaleCache          = sync.Map{}
-	chairAccessTokenCache   = sync.Map{}
-	appAccessTokenCache     = sync.Map{}
-	ownerAccessTokenCache   = sync.Map{}
-	freeChairsCache         = NewFreeChairs()
+	latestRideStatusCache        = sync.Map{}
+	latestRideCache              = sync.Map{}
+	latestChairLocation          = sync.Map{}
+	chairStatsCache              = sync.Map{}
+	chairTotalDistanceCache      = sync.Map{}
+	chairSpeedbyName             = sync.Map{}
+	appNotifChan                 = sync.Map{}
+	chairNotifChan               = sync.Map{}
+	chairSaleCache               = sync.Map{}
+	chairAccessTokenCache        = sync.Map{}
+	appAccessTokenCache          = sync.Map{}
+	ownerAccessTokenCache        = sync.Map{}
+	ownerCache                   = sync.Map{}
+	ownerChairRegisterTokenCache = sync.Map{}
+	chairsOwnerIDCache           = sync.Map{}
+	freeChairsCache              = NewFreeChairs()
 )
 
 func initCache() {
@@ -62,6 +65,9 @@ func initCache() {
 	chairAccessTokenCache = sync.Map{}
 	appAccessTokenCache = sync.Map{}
 	ownerAccessTokenCache = sync.Map{}
+	ownerCache = sync.Map{}
+	ownerChairRegisterTokenCache = sync.Map{}
+	chairsOwnerIDCache = sync.Map{}
 	freeChairsCache = NewFreeChairs()
 }
 
@@ -228,4 +234,40 @@ func (f *FreeChairs) Remove(chairID string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	delete(f.cache, chairID)
+}
+
+func getOwnerCache(ownerID string) (Owner, bool) {
+	owner, ok := ownerCache.Load(ownerID)
+	return owner.(Owner), ok
+}
+
+func createOwnerCache(ownerID string, owner Owner) {
+	ownerCache.Store(ownerID, owner)
+}
+
+func getOwnerChairRegisterTokenCache(chairRegisterToken string) (Owner, bool) {
+	owner, ok := ownerChairRegisterTokenCache.Load(chairRegisterToken)
+	return owner.(Owner), ok
+}
+
+func createOwnerChairRegisterTokenCache(chairRegisterToken string, owner Owner) {
+	ownerChairRegisterTokenCache.Store(chairRegisterToken, owner)
+}
+
+func getChairsOwnerIDCache(ownerID string) ([]Chair, bool) {
+	chairs, ok := chairsOwnerIDCache.Load(ownerID)
+	if !ok {
+		return []Chair{}, false
+	}
+	return chairs.([]Chair), ok
+}
+
+func createChairsOwnerIDCache(ownerID string, chair Chair) {
+	chairs := []Chair{}
+	tmp, ok := getChairsOwnerIDCache(ownerID)
+	if ok {
+		chairs = tmp
+	}
+	chairs = append(chairs, chair)
+	chairsOwnerIDCache.Store(ownerID, chairs)
 }

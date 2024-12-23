@@ -36,15 +36,21 @@ func internalGetMatching(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	rides := []Ride{}
-	if err := db.SelectContext(ctx, &rides, "SELECT * FROM rides WHERE chair_id IS NULL ORDER BY created_at LIMIT ?", 2*len(chairs)); err != nil {
+	tmp := []Ride{}
+	if err := db.SelectContext(ctx, &tmp, "SELECT * FROM rides WHERE chair_id IS NULL ORDER BY created_at"); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	if len(rides) == 0 {
+	if len(tmp) == 0 {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
+	fmt.Printf("[DEBUG] chairs,rides: %d,%d\n", len(chairs), len(tmp))
+	min := 2 * len(chairs)
+	if len(tmp) < min {
+		min = len(tmp)
+	}
+	rides := tmp[:min]
 
 	n := len(rides) + len(chairs) + 2
 	// 最小費用流

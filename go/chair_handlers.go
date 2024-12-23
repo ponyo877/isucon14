@@ -35,13 +35,9 @@ func chairPostChairs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	owner := &Owner{}
-	if err := db.GetContext(ctx, owner, "SELECT * FROM owners WHERE chair_register_token = ?", req.ChairRegisterToken); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			writeError(w, http.StatusUnauthorized, errors.New("invalid chair_register_token"))
-			return
-		}
-		writeError(w, http.StatusInternalServerError, err)
+	owner2, ok := getOwnerChairRegisterTokenCache(req.ChairRegisterToken)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, errors.New("invalid chair_register_token"))
 		return
 	}
 
@@ -51,15 +47,15 @@ func chairPostChairs(w http.ResponseWriter, r *http.Request) {
 	_, err := db.ExecContext(
 		ctx,
 		"INSERT INTO chairs (id, owner_id, name, model, is_active, access_token, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-		chairID, owner.ID, req.Name, req.Model, false, accessToken, now, now,
+		chairID, owner2.ID, req.Name, req.Model, false, accessToken, now, now,
 	)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	createChairAccessToken(accessToken, Chair{
+	chair := Chair{
 		ID:          chairID,
-		OwnerID:     owner.ID,
+		OwnerID:     owner2.ID,
 		Name:        req.Name,
 		Model:       req.Model,
 		IsActive:    false,
@@ -67,7 +63,9 @@ func chairPostChairs(w http.ResponseWriter, r *http.Request) {
 		CreatedAt:   now,
 		UpdatedAt:   now,
 		IsCompleted: false,
-	})
+	}
+	createChairAccessToken(accessToken, chair)
+	createChairsOwnerIDCache(owner2.ID, chair)
 
 	http.SetCookie(w, &http.Cookie{
 		Path:  "/",
@@ -77,7 +75,7 @@ func chairPostChairs(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusCreated, &chairPostChairsResponse{
 		ID:      chairID,
-		OwnerID: owner.ID,
+		OwnerID: owner2.ID,
 	})
 }
 
