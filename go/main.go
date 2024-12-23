@@ -232,6 +232,7 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, c := range chairs {
+		createChairCache(c.ID, c)
 		createChairAccessToken(c.AccessToken, c)
 		createChairsOwnerIDCache(c.OwnerID, c)
 	}

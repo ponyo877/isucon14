@@ -24,7 +24,6 @@ type chairPostChairsResponse struct {
 }
 
 func chairPostChairs(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
 	req := &chairPostChairsRequest{}
 	if err := bindJSON(r, req); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
@@ -44,15 +43,6 @@ func chairPostChairs(w http.ResponseWriter, r *http.Request) {
 	chairID := ulid.Make().String()
 	accessToken := secureRandomStr(32)
 	now := time.Now()
-	_, err := db.ExecContext(
-		ctx,
-		"INSERT INTO chairs (id, owner_id, name, model, is_active, access_token, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-		chairID, owner2.ID, req.Name, req.Model, false, accessToken, now, now,
-	)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
 	chair := Chair{
 		ID:          chairID,
 		OwnerID:     owner2.ID,
@@ -64,6 +54,7 @@ func chairPostChairs(w http.ResponseWriter, r *http.Request) {
 		UpdatedAt:   now,
 		IsCompleted: false,
 	}
+	createChairCache(chairID, chair)
 	createChairAccessToken(accessToken, chair)
 	createChairsOwnerIDCache(owner2.ID, chair)
 

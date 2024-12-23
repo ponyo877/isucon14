@@ -254,11 +254,7 @@ func appGetRides(w http.ResponseWriter, r *http.Request) {
 
 		item.Chair = getAppRidesResponseItemChair{}
 
-		chair := &Chair{}
-		if err := tx.GetContext(ctx, chair, `SELECT * FROM chairs WHERE id = ?`, ride.ChairID); err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
+		chair, _ := getChairCache(ride.ChairID.String)
 		item.Chair.ID = chair.ID
 		item.Chair.Name = chair.Name
 		item.Chair.Model = chair.Model
@@ -740,11 +736,7 @@ func getAppNotification(ctx context.Context, user *User, ride *Ride, rideStatusI
 	}
 
 	if ride.ChairID.Valid {
-		chair := &Chair{}
-		if err := tx.GetContext(ctx, chair, `SELECT * FROM chairs WHERE id = ?`, ride.ChairID); err != nil {
-			return nil, err
-		}
-
+		chair, _ := getChairCache(ride.ChairID.String)
 		stats := getChairStats(chair.ID)
 		response.Data.Chair = &appGetNotificationResponseChair{
 			ID:    chair.ID,

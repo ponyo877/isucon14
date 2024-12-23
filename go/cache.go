@@ -49,6 +49,7 @@ var (
 	ownerCache                   = sync.Map{}
 	ownerChairRegisterTokenCache = sync.Map{}
 	chairsOwnerIDCache           = sync.Map{}
+	chairCache                   = sync.Map{}
 	freeChairsCache              = NewFreeChairs()
 )
 
@@ -68,6 +69,7 @@ func initCache() {
 	ownerCache = sync.Map{}
 	ownerChairRegisterTokenCache = sync.Map{}
 	chairsOwnerIDCache = sync.Map{}
+	chairCache = sync.Map{}
 	freeChairsCache = NewFreeChairs()
 }
 
@@ -270,4 +272,13 @@ func createChairsOwnerIDCache(ownerID string, chair Chair) {
 	}
 	chairs = append(chairs, chair)
 	chairsOwnerIDCache.Store(ownerID, chairs)
+}
+
+func getChairCache(chairID string) (Chair, bool) {
+	chair, ok := chairCache.Load(chairID)
+	return chair.(Chair), ok
+}
+
+func createChairCache(chairID string, chair Chair) {
+	chairCache.Store(chairID, chair)
 }
