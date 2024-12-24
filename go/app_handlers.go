@@ -76,14 +76,19 @@ func executeUserTransaction(ctx context.Context, req *appPostUsersRequest, userI
 	}
 	defer tx.Rollback()
 	now := time.Now()
-	_, err = tx.ExecContext(
-		ctx,
-		"INSERT INTO users (id, username, firstname, lastname, date_of_birth, access_token, invitation_code, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-		userID, req.Username, req.FirstName, req.LastName, req.DateOfBirth, accessToken, invitationCode, now, now,
-	)
-	if err != nil {
-		return err
+	user := User{
+		ID:             userID,
+		Username:       req.Username,
+		Firstname:      req.FirstName,
+		Lastname:       req.LastName,
+		DateOfBirth:    req.DateOfBirth,
+		AccessToken:    accessToken,
+		InvitationCode: invitationCode,
+		CreatedAt:      now,
+		UpdatedAt:      now,
 	}
+	createUserCache(userID, user)
+	createUserInvCache(invitationCode, user)
 
 	// 初回登録キャンペーンのクーポンを付与
 	addUnusedCoupon(userID, 3000)
@@ -97,13 +102,9 @@ func executeUserTransaction(ctx context.Context, req *appPostUsersRequest, userI
 		}
 
 		// ユーザーチェック
-		var inviter User
-		err = tx.GetContext(ctx, &inviter, "SELECT * FROM users WHERE invitation_code = ?", *req.InvitationCode)
-		if err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
-				return errors.New("この招待コードは使用できません。")
-			}
-			return err
+		inviter, ok := getUserInvCache(*req.InvitationCode)
+		if !ok {
+			return errors.New("この招待コードは使用できません。")
 		}
 
 		// 招待クーポン付与

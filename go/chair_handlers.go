@@ -218,10 +218,9 @@ func chairGetNotification(w http.ResponseWriter, r *http.Request) {
 func getChairNotification(ctx context.Context, chair *Chair, ride *Ride) (*chairGetNotificationResponse, error) {
 	rideStatus := getLatestRideStatus(ride.ID)
 
-	user := &User{}
-	err := db.GetContext(ctx, user, "SELECT * FROM users WHERE id = ? FOR SHARE", ride.UserID)
-	if err != nil {
-		return nil, err
+	user, ok := getUserCache(ride.UserID)
+	if !ok {
+		return nil, errors.New("user not found")
 	}
 
 	return &chairGetNotificationResponse{
