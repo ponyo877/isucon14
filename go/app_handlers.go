@@ -86,24 +86,13 @@ func executeUserTransaction(ctx context.Context, req *appPostUsersRequest, userI
 	}
 
 	// 初回登録キャンペーンのクーポンを付与
-	_, err = tx.ExecContext(
-		ctx,
-		"INSERT INTO coupons (user_id, code, discount) VALUES (?, ?, ?)",
-		userID, "CP_NEW2024", 3000,
-	)
-	if err != nil {
-		return err
-	}
+	addUnusedCoupon(userID, 3000)
 
 	// 招待コードを使った登録
 	if req.InvitationCode != nil && *req.InvitationCode != "" {
 		// 招待する側の招待数をチェック
-		var coupons []Coupon
-		err = tx.SelectContext(ctx, &coupons, "SELECT * FROM coupons WHERE code = ? FOR UPDATE", "INV_"+*req.InvitationCode)
-		if err != nil {
-			return err
-		}
-		if len(coupons) >= 3 {
+		count, _ := getInvCouponCountCache(*req.InvitationCode)
+		if count >= 3 {
 			return errors.New("この招待コードは使用できません。")
 		}
 
@@ -118,23 +107,10 @@ func executeUserTransaction(ctx context.Context, req *appPostUsersRequest, userI
 		}
 
 		// 招待クーポン付与
-		_, err = tx.ExecContext(
-			ctx,
-			"INSERT INTO coupons (user_id, code, discount) VALUES (?, ?, ?)",
-			userID, "INV_"+*req.InvitationCode, 1500,
-		)
-		if err != nil {
-			return err
-		}
+		incInvCouponCountCache(*req.InvitationCode)
+		addUnusedCoupon(userID, 1500)
 		// 招待した人にもRewardを付与
-		_, err = tx.ExecContext(
-			ctx,
-			"INSERT INTO coupons (user_id, code, discount) VALUES (?, CONCAT(?, '_', FLOOR(UNIX_TIMESTAMP(NOW(3))*1000)), ?)",
-			inviter.ID, "RWD_"+*req.InvitationCode, 1000,
-		)
-		if err != nil {
-			return err
-		}
+		addUnusedCoupon(inviter.ID, 1000)
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -364,58 +340,10 @@ func appPostRides(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var coupon Coupon
-	if rideCount == 1 {
-		// 初回利用で、初回利用クーポンがあれば必ず使う
-		if err := tx.GetContext(ctx, &coupon, "SELECT * FROM coupons WHERE user_id = ? AND code = 'CP_NEW2024' AND used_by IS NULL FOR UPDATE", user.ID); err != nil {
-			if !errors.Is(err, sql.ErrNoRows) {
-				writeError(w, http.StatusInternalServerError, err)
-				return
-			}
-
-			// 無ければ他のクーポンを付与された順番に使う
-			if err := tx.GetContext(ctx, &coupon, "SELECT * FROM coupons WHERE user_id = ? AND used_by IS NULL ORDER BY created_at LIMIT 1 FOR UPDATE", user.ID); err != nil {
-				if !errors.Is(err, sql.ErrNoRows) {
-					writeError(w, http.StatusInternalServerError, err)
-					return
-				}
-			} else {
-				if _, err := tx.ExecContext(
-					ctx,
-					"UPDATE coupons SET used_by = ? WHERE user_id = ? AND code = ?",
-					rideID, user.ID, coupon.Code,
-				); err != nil {
-					writeError(w, http.StatusInternalServerError, err)
-					return
-				}
-			}
-		} else {
-			if _, err := tx.ExecContext(
-				ctx,
-				"UPDATE coupons SET used_by = ? WHERE user_id = ? AND code = 'CP_NEW2024'",
-				rideID, user.ID,
-			); err != nil {
-				writeError(w, http.StatusInternalServerError, err)
-				return
-			}
-		}
-	} else {
-		// 他のクーポンを付与された順番に使う
-		if err := tx.GetContext(ctx, &coupon, "SELECT * FROM coupons WHERE user_id = ? AND used_by IS NULL ORDER BY created_at LIMIT 1 FOR UPDATE", user.ID); err != nil {
-			if !errors.Is(err, sql.ErrNoRows) {
-				writeError(w, http.StatusInternalServerError, err)
-				return
-			}
-		} else {
-			if _, err := tx.ExecContext(
-				ctx,
-				"UPDATE coupons SET used_by = ? WHERE user_id = ? AND code = ?",
-				rideID, user.ID, coupon.Code,
-			); err != nil {
-				writeError(w, http.StatusInternalServerError, err)
-				return
-			}
-		}
+	// 初回利用クーポンは初回に必ず使われるしこれだけでok
+	if amount, ok := getUnusedCoupon(user.ID); ok {
+		useUnusedCoupon(user.ID)
+		createRideDiscountCache(rideID, amount)
 	}
 
 	ride := Ride{}
@@ -841,7 +769,6 @@ func calculateFare(pickupLatitude, pickupLongitude, destLatitude, destLongitude 
 }
 
 func calculateDiscountedFare(ctx context.Context, tx *sqlx.Tx, userID string, ride *Ride, pickupLatitude, pickupLongitude, destLatitude, destLongitude int) (int, error) {
-	var coupon Coupon
 	discount := 0
 	if ride != nil {
 		destLatitude = ride.DestinationLatitude
@@ -850,33 +777,15 @@ func calculateDiscountedFare(ctx context.Context, tx *sqlx.Tx, userID string, ri
 		pickupLongitude = ride.PickupLongitude
 
 		// すでにクーポンが紐づいているならそれの割引額を参照
-		if err := tx.GetContext(ctx, &coupon, "SELECT * FROM coupons WHERE used_by = ?", ride.ID); err != nil {
-			if !errors.Is(err, sql.ErrNoRows) {
-				return 0, err
-			}
-		} else {
-			discount = coupon.Discount
+		if amount, ok := getRideDiscountCache(ride.ID); ok {
+			discount = amount
 		}
 	} else {
 		// 初回利用クーポンを最優先で使う
-		if err := tx.GetContext(ctx, &coupon, "SELECT * FROM coupons WHERE user_id = ? AND code = 'CP_NEW2024' AND used_by IS NULL", userID); err != nil {
-			if !errors.Is(err, sql.ErrNoRows) {
-				return 0, err
-			}
-
-			// 無いなら他のクーポンを付与された順番に使う
-			if err := tx.GetContext(ctx, &coupon, "SELECT * FROM coupons WHERE user_id = ? AND used_by IS NULL ORDER BY created_at LIMIT 1", userID); err != nil {
-				if !errors.Is(err, sql.ErrNoRows) {
-					return 0, err
-				}
-			} else {
-				discount = coupon.Discount
-			}
-		} else {
-			discount = coupon.Discount
+		if amount, ok := getUnusedCoupon(userID); ok {
+			discount = amount
 		}
 	}
-
 	meteredFare := farePerDistance * calculateDistance(pickupLatitude, pickupLongitude, destLatitude, destLongitude)
 	discountedMeteredFare := max(meteredFare-discount, 0)
 

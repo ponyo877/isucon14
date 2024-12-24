@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/go-json-experiment/json"
@@ -245,6 +246,43 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 		createOwnerAccessToken(o.AccessToken, o)
 		createOwnerCache(o.ID, o)
 		createOwnerChairRegisterTokenCache(o.ChairRegisterToken, o)
+	}
+	codes := []string{}
+	if err := db.SelectContext(ctx, &codes, "SELECT code FROM coupons WHERE code like 'INV_%'"); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	for _, c := range codes {
+		code := strings.Replace(c, "INV_", "", 1)
+		incInvCouponCountCache(code)
+	}
+	coupons := []Coupon{}
+	if err := db.SelectContext(ctx, &coupons, "SELECT * FROM coupons WHERE used_by IS NULL ORDER BY created_at"); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	for _, c := range coupons {
+		if strings.HasPrefix(c.Code, "CP_") {
+			addUnusedCoupon(c.UserID, 3000)
+		} else if strings.HasPrefix(c.Code, "INV_") {
+			addUnusedCoupon(c.UserID, 1500)
+		} else {
+			addUnusedCoupon(c.UserID, 1000)
+		}
+	}
+	coupons = []Coupon{}
+	if err := db.SelectContext(ctx, &coupons, "SELECT * FROM coupons WHERE used_by IS NOT NULL ORDER BY created_at"); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	for _, c := range coupons {
+		if strings.HasPrefix(c.Code, "CP_") {
+			createRideDiscountCache(*c.UsedBy, 3000)
+		} else if strings.HasPrefix(c.Code, "INV_") {
+			createRideDiscountCache(*c.UsedBy, 1500)
+		} else {
+			createRideDiscountCache(*c.UsedBy, 1000)
+		}
 	}
 
 	writeJSON(w, http.StatusOK, postInitializeResponse{Language: "go"})

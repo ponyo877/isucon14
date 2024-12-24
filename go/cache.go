@@ -4,6 +4,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gammazero/deque"
 	"github.com/oklog/ulid/v2"
 )
 
@@ -50,6 +51,9 @@ var (
 	ownerChairRegisterTokenCache = sync.Map{}
 	chairsOwnerIDCache           = sync.Map{}
 	chairCache                   = sync.Map{}
+	invCouponCountCache          = sync.Map{}
+	unusedCouponsCache           = sync.Map{}
+	rideDiscountCache            = sync.Map{}
 	freeChairsCache              = NewFreeChairs()
 )
 
@@ -70,6 +74,9 @@ func initCache() {
 	ownerChairRegisterTokenCache = sync.Map{}
 	chairsOwnerIDCache = sync.Map{}
 	chairCache = sync.Map{}
+	invCouponCountCache = sync.Map{}
+	unusedCouponsCache = sync.Map{}
+	rideDiscountCache = sync.Map{}
 	freeChairsCache = NewFreeChairs()
 }
 
@@ -281,4 +288,98 @@ func getChairCache(chairID string) (Chair, bool) {
 
 func createChairCache(chairID string, chair Chair) {
 	chairCache.Store(chairID, chair)
+}
+
+func getInvCouponCountCache(code string) (int, bool) {
+	count, ok := invCouponCountCache.Load(code)
+	if !ok {
+		return 0, false
+	}
+	return count.(int), ok
+}
+
+func incInvCouponCountCache(code string) {
+	count := 0
+	if current, ok := getInvCouponCountCache(code); ok {
+		count = current
+	}
+	invCouponCountCache.Store(code, count+1)
+}
+
+type UnusedCouponAmount struct {
+	cache deque.Deque[int]
+	mu    sync.Mutex
+}
+
+func NewUnusedCouponAmount() *UnusedCouponAmount {
+	return &UnusedCouponAmount{
+		cache: deque.Deque[int]{},
+		mu:    sync.Mutex{},
+	}
+}
+
+func (u *UnusedCouponAmount) Len() int {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return u.cache.Len()
+}
+
+func (u *UnusedCouponAmount) Add(amount int) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	u.cache.PushBack(amount)
+}
+
+func (u *UnusedCouponAmount) Front() int {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return u.cache.Front()
+}
+
+func (u *UnusedCouponAmount) Remove() int {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return u.cache.PopFront()
+}
+
+func addUnusedCoupon(userID string, amount int) {
+	unusedCouponAmount := NewUnusedCouponAmount()
+	if tmp, ok := unusedCouponsCache.Load(userID); ok {
+		unusedCouponAmount = tmp.(*UnusedCouponAmount)
+	}
+	unusedCouponAmount.Add(amount)
+	unusedCouponsCache.Store(userID, unusedCouponAmount)
+}
+
+func getUnusedCoupon(userID string) (int, bool) {
+	unusedCouponAmount := NewUnusedCouponAmount()
+	tmp, ok := unusedCouponsCache.Load(userID)
+	if !ok {
+		return 0, false
+	}
+	unusedCouponAmount = tmp.(*UnusedCouponAmount)
+	if unusedCouponAmount.Len() == 0 {
+		return 0, false
+	}
+	return unusedCouponAmount.Front(), true
+}
+
+func useUnusedCoupon(userID string) int {
+	unusedCouponAmount := NewUnusedCouponAmount()
+	if tmp, ok := unusedCouponsCache.Load(userID); ok {
+		unusedCouponAmount = tmp.(*UnusedCouponAmount)
+	}
+	return unusedCouponAmount.Remove()
+}
+
+func getRideDiscountCache(rideID string) (int, bool) {
+	discount, ok := rideDiscountCache.Load(rideID)
+	if !ok {
+		return 0, false
+	}
+	return discount.(int), ok
+}
+
+func createRideDiscountCache(rideID string, discount int) {
+	rideDiscountCache.Store(rideID, discount)
 }
