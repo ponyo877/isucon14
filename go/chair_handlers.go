@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -34,7 +33,7 @@ func chairPostChairs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	owner2, ok := getOwnerChairRegisterTokenCache(req.ChairRegisterToken)
+	owner, ok := getOwnerChairRegisterTokenCache(req.ChairRegisterToken)
 	if !ok {
 		writeError(w, http.StatusUnauthorized, errors.New("invalid chair_register_token"))
 		return
@@ -45,18 +44,17 @@ func chairPostChairs(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
 	chair := Chair{
 		ID:          chairID,
-		OwnerID:     owner2.ID,
+		OwnerID:     owner.ID,
 		Name:        req.Name,
 		Model:       req.Model,
 		IsActive:    false,
 		AccessToken: accessToken,
 		CreatedAt:   now,
 		UpdatedAt:   now,
-		IsCompleted: false,
 	}
 	createChairCache(chairID, chair)
 	createChairAccessToken(accessToken, chair)
-	createChairsOwnerIDCache(owner2.ID, chair)
+	createChairsOwnerIDCache(owner.ID, chair)
 
 	http.SetCookie(w, &http.Cookie{
 		Path:  "/",
@@ -66,7 +64,7 @@ func chairPostChairs(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusCreated, &chairPostChairsResponse{
 		ID:      chairID,
-		OwnerID: owner2.ID,
+		OwnerID: owner.ID,
 	})
 }
 
@@ -192,7 +190,7 @@ func chairGetNotification(w http.ResponseWriter, r *http.Request) {
 		case <-clientGone:
 			return
 		case notif := <-chairChan.(chan Notif):
-			response, err := getChairNotification(ctx, chair, notif.Ride)
+			response, err := getChairNotification(notif.Ride)
 			if err != nil {
 				return
 			}
@@ -215,7 +213,7 @@ func chairGetNotification(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func getChairNotification(ctx context.Context, chair *Chair, ride *Ride) (*chairGetNotificationResponse, error) {
+func getChairNotification(ride *Ride) (*chairGetNotificationResponse, error) {
 	rideStatus := getLatestRideStatus(ride.ID)
 
 	user, ok := getUserCache(ride.UserID)
@@ -240,7 +238,6 @@ func getChairNotification(ctx context.Context, chair *Chair, ride *Ride) (*chair
 			},
 			Status: rideStatus,
 		},
-		RetryAfterMs: 250,
 	}, nil
 }
 
