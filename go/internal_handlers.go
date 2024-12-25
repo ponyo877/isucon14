@@ -31,7 +31,9 @@ func internalGetMatching(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	ctx := r.Context()
+	freeChairsCache.Lock()
 	chairs := freeChairsCache.List()
+	freeChairsCache.Unlock()
 	if len(chairs) == 0 {
 		w.WriteHeader(http.StatusNoContent)
 		return
@@ -64,7 +66,7 @@ func internalGetMatching(w http.ResponseWriter, r *http.Request) {
 	// chair -> ride
 	for i, c := range chairs {
 		for j, r := range rides {
-			cLoc := getLatestChairLocation(c.ID)
+			cLoc, _ := getLatestChairLocation(c.ID)
 			distance := calculateDistance(cLoc.Latitude, cLoc.Longitude, r.PickupLatitude, r.PickupLongitude)
 			speed := 1
 			if s, ok := chairSpeedbyName.Load(c.Model); ok {

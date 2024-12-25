@@ -172,7 +172,7 @@ func appGetRides(w http.ResponseWriter, r *http.Request) {
 
 	items := []getAppRidesResponseItem{}
 	for _, ride := range rides {
-		status := getLatestRideStatus(ride.ID)
+		status, _ := getLatestRideStatus(ride.ID)
 		if status != "COMPLETED" {
 			continue
 		}
@@ -257,7 +257,7 @@ func appPostRides(w http.ResponseWriter, r *http.Request) {
 
 	continuingRideCount := 0
 	for _, ride := range rides {
-		status := getLatestRideStatus(ride.ID)
+		status, _ := getLatestRideStatus(ride.ID)
 		if status != "COMPLETED" {
 			continuingRideCount++
 		}
@@ -291,10 +291,6 @@ func appPostRides(w http.ResponseWriter, r *http.Request) {
 	}
 
 	fare := calculateDiscountedFare(user.ID, &ride, req.PickupCoordinate.Latitude, req.PickupCoordinate.Longitude, req.DestinationCoordinate.Latitude, req.DestinationCoordinate.Longitude)
-	// if err != nil {
-	// 	writeError(w, http.StatusInternalServerError, err)
-	// 	return
-	// }
 
 	if err := tx.Commit(); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
@@ -399,7 +395,7 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	status := getLatestRideStatus(ride.ID)
+	status, _ := getLatestRideStatus(ride.ID)
 
 	if status != "ARRIVED" {
 		writeError(w, http.StatusBadRequest, errors.New("not arrived yet"))
@@ -634,15 +630,16 @@ func appGetNearbyChairs(w http.ResponseWriter, r *http.Request) {
 	coordinate := Coordinate{Latitude: lat, Longitude: lon}
 	nearbyChairs := []appGetNearbyChairsResponseChair{}
 
+	freeChairsCache.Lock()
+	retrievedAt := time.Now()
+	defer freeChairsCache.Unlock()
 	chairs := freeChairsCache.List()
 
 	for _, chair := range chairs {
-		LatestChairLoc, ok := latestChairLocation.Load(chair.ID)
+		chairLocation, ok := getLatestChairLocation(chair.ID)
 		if !ok {
 			continue
 		}
-		chairLocation := LatestChairLoc.(ChairLocation)
-
 		if calculateDistance(coordinate.Latitude, coordinate.Longitude, chairLocation.Latitude, chairLocation.Longitude) <= distance {
 			nearbyChairs = append(nearbyChairs, appGetNearbyChairsResponseChair{
 				ID:    chair.ID,
@@ -655,7 +652,7 @@ func appGetNearbyChairs(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 	}
-	retrievedAt := time.Now()
+
 	writeJSON(w, http.StatusOK, &appGetNearbyChairsResponse{
 		Chairs:      nearbyChairs,
 		RetrievedAt: retrievedAt.UnixMilli(),

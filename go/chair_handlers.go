@@ -109,7 +109,7 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 	if ok {
 		rideIns := rideAny.(Ride)
 		ride = &rideIns
-		status := getLatestRideStatus(ride.ID)
+		status, _ := getLatestRideStatus(ride.ID)
 		if status != "COMPLETED" && status != "CANCELED" {
 			if req.Latitude == ride.PickupLatitude && req.Longitude == ride.PickupLongitude && status == "ENROUTE" {
 				processRideStatus(ride, "PICKUP")
@@ -206,7 +206,7 @@ func chairGetNotification(w http.ResponseWriter, r *http.Request) {
 }
 
 func getChairNotification(ride *Ride) (*chairGetNotificationResponse, error) {
-	rideStatus := getLatestRideStatus(ride.ID)
+	rideStatus, _ := getLatestRideStatus(ride.ID)
 
 	user, ok := getUserCache(ride.UserID)
 	if !ok {
@@ -278,7 +278,7 @@ func chairPostRideStatus(w http.ResponseWriter, r *http.Request) {
 		targetStatus = "ENROUTE"
 	// After Picking up user
 	case "CARRYING":
-		status := getLatestRideStatus(ride.ID)
+		status, _ := getLatestRideStatus(ride.ID)
 		if status != "PICKUP" {
 			writeError(w, http.StatusBadRequest, errors.New("chair has not arrived yet"))
 			return

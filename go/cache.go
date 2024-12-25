@@ -84,9 +84,12 @@ func initCache() {
 	freeChairsCache = NewFreeChairs()
 }
 
-func getLatestRideStatus(rideID string) string {
-	status, _ := latestRideStatusCache.Load(rideID)
-	return status.(string)
+func getLatestRideStatus(rideID string) (string, bool) {
+	status, ok := latestRideStatusCache.Load(rideID)
+	if !ok {
+		return "", false
+	}
+	return status.(string), ok
 }
 
 func createRideStatus(rideID string, status string) {
@@ -168,11 +171,12 @@ func createChairTotalDistanceCache(chairID string, distance int, now time.Time) 
 	})
 }
 
-func getLatestChairLocation(chairID string) ChairLocation {
-	if loc, ok := latestChairLocation.Load(chairID); ok {
-		return loc.(ChairLocation)
+func getLatestChairLocation(chairID string) (ChairLocation, bool) {
+	loc, ok := latestChairLocation.Load(chairID)
+	if !ok {
+		return ChairLocation{}, false
 	}
-	return ChairLocation{}
+	return loc.(ChairLocation), ok
 }
 
 func getChairStatsCache(chairID string) (ChairStats, bool) {
@@ -235,10 +239,15 @@ func NewFreeChairs() *FreeChairs {
 		mu:    sync.Mutex{},
 	}
 }
+func (f *FreeChairs) Lock() {
+	f.mu.Lock()
+}
+
+func (f *FreeChairs) Unlock() {
+	f.mu.Unlock()
+}
 
 func (f *FreeChairs) List() []Chair {
-	f.mu.Lock()
-	defer f.mu.Unlock()
 	chairs := []Chair{}
 	for _, v := range f.cache {
 		chairs = append(chairs, v)
@@ -250,6 +259,14 @@ func (f *FreeChairs) Add(chair Chair) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.cache[chair.ID] = chair
+}
+
+func (f *FreeChairs) BulkRemove(chairIDs []string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, chairID := range chairIDs {
+		delete(f.cache, chairID)
+	}
 }
 
 func (f *FreeChairs) Remove(chairID string) {
