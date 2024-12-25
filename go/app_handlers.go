@@ -150,24 +150,15 @@ func appGetRides(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 
-	rides := []Ride{}
-	if err := tx.SelectContext(
-		ctx,
-		&rides,
-		`SELECT * FROM rides WHERE user_id = ? ORDER BY created_at DESC`,
-		user.ID,
-	); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
+	rideIDs, _ := listRideIDsUserIDCache(user.ID)
 
 	items := []getAppRidesResponseItem{}
-	for _, ride := range rides {
-		status, _ := getLatestRideStatus(ride.ID)
+	for _, rideID := range rideIDs {
+		status, _ := getLatestRideStatus(rideID)
 		if status != "COMPLETED" {
 			continue
 		}
-		rideTmp, _ := getRideCache(ride.ID)
+		ride, _ := getRideCache(rideID)
 		fare := calculateDiscountedFare(user.ID, &ride, ride.PickupLatitude, ride.PickupLongitude, ride.DestinationLatitude, ride.DestinationLongitude)
 
 		item := getAppRidesResponseItem{
@@ -175,9 +166,9 @@ func appGetRides(w http.ResponseWriter, r *http.Request) {
 			PickupCoordinate:      Coordinate{Latitude: ride.PickupLatitude, Longitude: ride.PickupLongitude},
 			DestinationCoordinate: Coordinate{Latitude: ride.DestinationLatitude, Longitude: ride.DestinationLongitude},
 			Fare:                  fare,
-			Evaluation:            *rideTmp.Evaluation,
+			Evaluation:            *ride.Evaluation,
 			RequestedAt:           ride.CreatedAt.UnixMilli(),
-			CompletedAt:           rideTmp.UpdatedAt.UnixMilli(),
+			CompletedAt:           ride.UpdatedAt.UnixMilli(),
 		}
 
 		item.Chair = getAppRidesResponseItemChair{}
@@ -266,6 +257,7 @@ func appPostRides(w http.ResponseWriter, r *http.Request) {
 		UpdatedAt:            now,
 	}
 	createRideCache(rideID, ride)
+	addRideIDsUserIDCache(user.ID, ride.ID)
 
 	// 初回利用クーポンは初回に必ず使われるしこれだけでok
 	if amount, ok := getUnusedCoupon(user.ID); ok {

@@ -317,6 +317,14 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+	rides = []Ride{}
+	if err := db.SelectContext(ctx, &rides, "SELECT * FROM rides ORDER BY created_at"); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	for _, r := range rides {
+		addRideIDsUserIDCache(r.UserID, r.ID)
+	}
 
 	writeJSON(w, http.StatusOK, postInitializeResponse{Language: "go"})
 }
