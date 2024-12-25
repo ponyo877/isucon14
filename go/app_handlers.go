@@ -537,6 +537,9 @@ func appGetNotification(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				return
 			}
+			if notif.RideStatus == "COMPLETED" {
+				latestRideCache.Delete(notif.Ride.ChairID.String)
+			}
 		}
 	}
 }
@@ -638,6 +641,10 @@ func appGetNearbyChairs(w http.ResponseWriter, r *http.Request) {
 	for _, chair := range chairs {
 		chairLocation, ok := getLatestChairLocation(chair.ID)
 		if !ok {
+			continue
+		}
+		if _, ok := latestRideCache.Load(chair.ID); ok {
+			fmt.Printf("[DEBUG] chair %s is already in use\n", chair.ID)
 			continue
 		}
 		if calculateDistance(coordinate.Latitude, coordinate.Longitude, chairLocation.Latitude, chairLocation.Longitude) <= distance {

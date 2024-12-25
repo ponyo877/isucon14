@@ -200,6 +200,7 @@ func chairGetNotification(w http.ResponseWriter, r *http.Request) {
 			}
 			if notif.RideStatus == "COMPLETED" {
 				freeChairsCache.Add(*chair)
+				latestRideCache.Delete(notif.Ride.ChairID.String)
 			}
 		}
 	}
