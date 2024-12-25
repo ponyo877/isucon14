@@ -1,7 +1,6 @@
 package main
 
 import (
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -257,13 +256,9 @@ func chairPostRideStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 
-	ride := &Ride{}
-	if err := tx.GetContext(ctx, ride, "SELECT * FROM rides WHERE id = ? FOR UPDATE", rideID); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			writeError(w, http.StatusNotFound, errors.New("ride not found"))
-			return
-		}
-		writeError(w, http.StatusInternalServerError, err)
+	ride, ok := getRideCache(rideID)
+	if !ok {
+		writeError(w, http.StatusNotFound, errors.New("ride not found"))
 		return
 	}
 
@@ -294,7 +289,7 @@ func chairPostRideStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if targetStatus != "" {
-		processRideStatus(ride, targetStatus)
+		processRideStatus(&ride, targetStatus)
 	}
 
 	w.WriteHeader(http.StatusNoContent)

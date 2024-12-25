@@ -176,7 +176,7 @@ func appGetRides(w http.ResponseWriter, r *http.Request) {
 		if status != "COMPLETED" {
 			continue
 		}
-
+		rideTmp, _ := getRideCache(ride.ID)
 		fare := calculateDiscountedFare(user.ID, &ride, ride.PickupLatitude, ride.PickupLongitude, ride.DestinationLatitude, ride.DestinationLongitude)
 
 		item := getAppRidesResponseItem{
@@ -184,9 +184,9 @@ func appGetRides(w http.ResponseWriter, r *http.Request) {
 			PickupCoordinate:      Coordinate{Latitude: ride.PickupLatitude, Longitude: ride.PickupLongitude},
 			DestinationCoordinate: Coordinate{Latitude: ride.DestinationLatitude, Longitude: ride.DestinationLongitude},
 			Fare:                  fare,
-			Evaluation:            *ride.Evaluation,
+			Evaluation:            *rideTmp.Evaluation,
 			RequestedAt:           ride.CreatedAt.UnixMilli(),
-			CompletedAt:           ride.UpdatedAt.UnixMilli(),
+			CompletedAt:           rideTmp.UpdatedAt.UnixMilli(),
 		}
 
 		item.Chair = getAppRidesResponseItemChair{}
@@ -277,6 +277,17 @@ func appPostRides(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+	ride := Ride{
+		ID:                   rideID,
+		UserID:               user.ID,
+		PickupLatitude:       req.PickupCoordinate.Latitude,
+		PickupLongitude:      req.PickupCoordinate.Longitude,
+		DestinationLatitude:  req.DestinationCoordinate.Latitude,
+		DestinationLongitude: req.DestinationCoordinate.Longitude,
+		CreatedAt:            now,
+		UpdatedAt:            now,
+	}
+	createRideCache(rideID, ride)
 
 	// 初回利用クーポンは初回に必ず使われるしこれだけでok
 	if amount, ok := getUnusedCoupon(user.ID); ok {
@@ -382,13 +393,9 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 
-	ride := &Ride{}
-	if err := tx.GetContext(ctx, ride, `SELECT * FROM rides WHERE id = ?`, rideID); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			writeError(w, http.StatusNotFound, errors.New("ride not found"))
-			return
-		}
-		writeError(w, http.StatusInternalServerError, err)
+	ride, ok := getRideCache(rideID)
+	if !ok {
+		writeError(w, http.StatusNotFound, errors.New("ride not found"))
 		return
 	}
 	status, _ := getLatestRideStatus(ride.ID)
@@ -400,31 +407,9 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 	if ride.ChairID.Valid {
 		addChairStatsCache(ride.ChairID.String, req.Evaluation)
 	}
-	result, err := tx.ExecContext(
-		ctx,
-		`UPDATE rides SET evaluation = ? WHERE id = ?`,
-		req.Evaluation, rideID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-
-	if count, err := result.RowsAffected(); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	} else if count == 0 {
-		writeError(w, http.StatusNotFound, errors.New("ride not found"))
-		return
-	}
-
-	if err := tx.GetContext(ctx, ride, `SELECT * FROM rides WHERE id = ?`, rideID); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			writeError(w, http.StatusNotFound, errors.New("ride not found"))
-			return
-		}
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
+	ride.Evaluation = &req.Evaluation
+	ride.UpdatedAt = time.Now()
+	createRideCache(rideID, ride)
 
 	paymentToken := &PaymentToken{}
 	if err := tx.GetContext(ctx, paymentToken, `SELECT * FROM payment_tokens WHERE user_id = ?`, ride.UserID); err != nil {
@@ -436,7 +421,7 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fare := calculateDiscountedFare(ride.UserID, ride, ride.PickupLatitude, ride.PickupLongitude, ride.DestinationLatitude, ride.DestinationLongitude)
+	fare := calculateDiscountedFare(ride.UserID, &ride, ride.PickupLatitude, ride.PickupLongitude, ride.DestinationLatitude, ride.DestinationLongitude)
 	paymentGatewayRequest := &paymentGatewayPostPaymentRequest{
 		Amount: fare,
 	}
@@ -460,7 +445,7 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	processRideStatus(ride, "COMPLETED")
+	processRideStatus(&ride, "COMPLETED")
 
 	writeJSON(w, http.StatusOK, &appPostRideEvaluationResponse{
 		CompletedAt: ride.UpdatedAt.UnixMilli(),

@@ -304,6 +304,14 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 		createUserCache(u.ID, u)
 		createUserInvCache(u.InvitationCode, u)
 	}
+	rides = []Ride{}
+	if err := db.SelectContext(ctx, &rides, "SELECT * FROM rides"); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	for _, r := range rides {
+		createRideCache(r.ID, r)
+	}
 
 	writeJSON(w, http.StatusOK, postInitializeResponse{Language: "go"})
 }
