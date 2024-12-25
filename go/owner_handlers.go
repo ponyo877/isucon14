@@ -102,13 +102,13 @@ func ownerGetSales(w http.ResponseWriter, r *http.Request) {
 
 	owner := r.Context().Value("owner").(*Owner)
 
-	chairs2, _ := getChairsOwnerIDCache(owner.ID)
+	chairs, _ := getChairsOwnerIDCache(owner.ID)
 	res := ownerGetSalesResponse{
 		TotalSales: 0,
 	}
 
 	modelSalesByModel := map[string]int{}
-	for _, chair := range chairs2 {
+	for _, chair := range chairs {
 		if _, ok := modelSalesByModel[chair.Model]; !ok {
 			modelSalesByModel[chair.Model] = 0
 		}
@@ -121,9 +121,9 @@ func ownerGetSales(w http.ResponseWriter, r *http.Request) {
 			})
 			continue
 		}
-		sales2 := salesAny.([]ChairSale)
+		sales := salesAny.([]ChairSale)
 		sumSales := 0
-		for _, sale := range sales2 {
+		for _, sale := range sales {
 			if sale.UpdatedAt.Before(since) || sale.UpdatedAt.After(until.Add(999*time.Microsecond)) {
 				continue
 			}
@@ -192,9 +192,9 @@ func ownerGetChairs(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	owner := ctx.Value("owner").(*Owner)
 
-	chairs2, _ := getChairsOwnerIDCache(owner.ID)
+	chairs, _ := getChairsOwnerIDCache(owner.ID)
 	res := ownerGetChairResponse{}
-	for _, chair := range chairs2 {
+	for _, chair := range chairs {
 		totalDistance := 0
 		var totalDistanceUpdatedAt *int64
 		if totalAny, ok := chairTotalDistanceCache.Load(chair.ID); ok {

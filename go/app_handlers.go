@@ -227,8 +227,8 @@ func appGetRides(w http.ResponseWriter, r *http.Request) {
 		item.Chair.Name = chair.Name
 		item.Chair.Model = chair.Model
 
-		owner2, _ := getOwnerCache(chair.OwnerID)
-		item.Chair.Owner = owner2.Name
+		owner, _ := getOwnerCache(chair.OwnerID)
+		item.Chair.Owner = owner.Name
 
 		items = append(items, item)
 	}
@@ -415,7 +415,6 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	rideID := r.PathValue("ride_id")
 	lazyDo := func() {}
-	lazyDo2 := func() {}
 
 	req := &appPostRideEvaluationRequest{}
 	if err := bindJSON(r, req); err != nil {
@@ -523,7 +522,6 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	lazyDo()
-	lazyDo2()
 
 	writeJSON(w, http.StatusOK, &appPostRideEvaluationResponse{
 		CompletedAt: ride.UpdatedAt.UnixMilli(),
