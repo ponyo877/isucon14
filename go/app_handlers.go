@@ -284,18 +284,6 @@ func appPostRides(w http.ResponseWriter, r *http.Request) {
 		createRideDiscountCache(rideID, amount)
 	}
 
-	ride := Ride{}
-	if err := tx.GetContext(ctx, &ride, "SELECT * FROM rides WHERE id = ?", rideID); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-
-	fare := calculateDiscountedFare(user.ID, &ride, req.PickupCoordinate.Latitude, req.PickupCoordinate.Longitude, req.DestinationCoordinate.Latitude, req.DestinationCoordinate.Longitude)
-
-	if err := tx.Commit(); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
 	rideTmp := &Ride{
 		ID:                   rideID,
 		UserID:               user.ID,
@@ -306,6 +294,14 @@ func appPostRides(w http.ResponseWriter, r *http.Request) {
 		CreatedAt:            now,
 		UpdatedAt:            now,
 	}
+
+	fare := calculateDiscountedFare(user.ID, rideTmp, req.PickupCoordinate.Latitude, req.PickupCoordinate.Longitude, req.DestinationCoordinate.Latitude, req.DestinationCoordinate.Longitude)
+
+	if err := tx.Commit(); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+
 	processRideStatus(rideTmp, "MATCHING")
 
 	writeJSON(w, http.StatusAccepted, &appPostRidesResponse{
