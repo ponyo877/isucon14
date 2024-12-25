@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -112,16 +111,7 @@ func appPostPaymentMethods(w http.ResponseWriter, r *http.Request) {
 
 	user := ctx.Value("user").(*User)
 
-	_, err := db.ExecContext(
-		ctx,
-		`INSERT INTO payment_tokens (user_id, token) VALUES (?, ?)`,
-		user.ID,
-		req.Token,
-	)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
+	createPaymentTokenCache(user.ID, req.Token)
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -411,13 +401,9 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 	ride.UpdatedAt = time.Now()
 	createRideCache(rideID, ride)
 
-	paymentToken := &PaymentToken{}
-	if err := tx.GetContext(ctx, paymentToken, `SELECT * FROM payment_tokens WHERE user_id = ?`, ride.UserID); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			writeError(w, http.StatusBadRequest, errors.New("payment token not registered"))
-			return
-		}
-		writeError(w, http.StatusInternalServerError, err)
+	token, ok := getPaymentTokenCache(ride.UserID)
+	if !ok {
+		writeError(w, http.StatusBadRequest, errors.New("payment token not registered"))
 		return
 	}
 
@@ -426,13 +412,7 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 		Amount: fare,
 	}
 
-	var paymentGatewayURL string
-	if err := tx.GetContext(ctx, &paymentGatewayURL, "SELECT value FROM settings WHERE name = 'payment_gateway_url'"); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-
-	if err := requestPaymentGatewayPostPayment(ctx, paymentGatewayURL, rideID, paymentToken.Token, paymentGatewayRequest); err != nil {
+	if err := requestPaymentGatewayPostPayment(ctx, paymentGatewayURL, rideID, token, paymentGatewayRequest); err != nil {
 		if errors.Is(err, erroredUpstream) {
 			writeError(w, http.StatusBadGateway, err)
 			return

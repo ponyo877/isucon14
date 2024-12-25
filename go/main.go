@@ -23,6 +23,7 @@ import (
 )
 
 var db *sqlx.DB
+var paymentGatewayURL string
 
 func main() {
 	go func() {
@@ -311,6 +312,10 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, r := range rides {
 		createRideCache(r.ID, r)
+	}
+	if err := db.GetContext(ctx, &paymentGatewayURL, "SELECT value FROM settings WHERE name = 'payment_gateway_url'"); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
 	}
 
 	writeJSON(w, http.StatusOK, postInitializeResponse{Language: "go"})
