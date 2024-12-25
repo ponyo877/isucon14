@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/go-sql-driver/mysql"
 	"github.com/oklog/ulid/v2"
 )
 
@@ -28,7 +27,6 @@ type appPostUsersResponse struct {
 }
 
 func appPostUsers(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
 	req := &appPostUsersRequest{}
 	if err := bindJSON(r, req); err != nil {
 		writeError(w, http.StatusBadRequest, err)
@@ -43,32 +41,6 @@ func appPostUsers(w http.ResponseWriter, r *http.Request) {
 	accessToken := secureRandomStr(32)
 	invitationCode := secureRandomStr(15)
 
-	const maxRetries = 5
-	for i := 0; i < maxRetries; i++ {
-		err := executeUserTransaction(ctx, req, userID, accessToken, invitationCode)
-		if err == nil {
-			http.SetCookie(w, &http.Cookie{
-				Path:  "/",
-				Name:  "app_session",
-				Value: accessToken,
-			})
-			writeJSON(w, http.StatusCreated, &appPostUsersResponse{
-				ID:             userID,
-				InvitationCode: invitationCode,
-			})
-			return
-		}
-		if mysqlErr, ok := err.(*mysql.MySQLError); ok && mysqlErr.Number == 1213 {
-			// デッドロックエラーの場合はリトライ
-			continue
-		}
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-	writeError(w, http.StatusInternalServerError, errors.New("transaction failed after retries"))
-}
-
-func executeUserTransaction(ctx context.Context, req *appPostUsersRequest, userID, accessToken, invitationCode string) error {
 	now := time.Now()
 	user := User{
 		ID:             userID,
@@ -92,13 +64,15 @@ func executeUserTransaction(ctx context.Context, req *appPostUsersRequest, userI
 		// 招待する側の招待数をチェック
 		count, _ := getInvCouponCountCache(*req.InvitationCode)
 		if count >= 3 {
-			return errors.New("この招待コードは使用できません。")
+			writeError(w, http.StatusInternalServerError, errors.New("この招待コードは使用できません。"))
+			return
 		}
 
 		// ユーザーチェック
 		inviter, ok := getUserInvCache(*req.InvitationCode)
 		if !ok {
-			return errors.New("この招待コードは使用できません。")
+			writeError(w, http.StatusInternalServerError, errors.New("この招待コードは使用できません。"))
+			return
 		}
 
 		// 招待クーポン付与
@@ -108,17 +82,16 @@ func executeUserTransaction(ctx context.Context, req *appPostUsersRequest, userI
 		addUnusedCoupon(inviter.ID, 1000)
 	}
 
-	createAppAccessToken(accessToken, User{
-		ID:             userID,
-		Username:       req.Username,
-		Firstname:      req.FirstName,
-		Lastname:       req.LastName,
-		DateOfBirth:    req.DateOfBirth,
-		InvitationCode: invitationCode,
-		CreatedAt:      now,
-		UpdatedAt:      now,
+	createAppAccessToken(accessToken, user)
+	http.SetCookie(w, &http.Cookie{
+		Path:  "/",
+		Name:  "app_session",
+		Value: accessToken,
 	})
-	return nil
+	writeJSON(w, http.StatusCreated, &appPostUsersResponse{
+		ID:             userID,
+		InvitationCode: invitationCode,
+	})
 }
 
 type appPostPaymentMethodsRequest struct {
@@ -204,11 +177,7 @@ func appGetRides(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		fare, err := calculateDiscountedFare(user.ID, &ride, ride.PickupLatitude, ride.PickupLongitude, ride.DestinationLatitude, ride.DestinationLongitude)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
+		fare := calculateDiscountedFare(user.ID, &ride, ride.PickupLatitude, ride.PickupLongitude, ride.DestinationLatitude, ride.DestinationLongitude)
 
 		item := getAppRidesResponseItem{
 			ID:                    ride.ID,
@@ -261,7 +230,6 @@ type executableGet interface {
 func appPostRides(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	req := &appPostRidesRequest{}
-	lazyDo := func() {}
 	if err := bindJSON(r, req); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
@@ -310,22 +278,6 @@ func appPostRides(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tmpRide := &Ride{
-		ID:                   rideID,
-		UserID:               user.ID,
-		PickupLatitude:       req.PickupCoordinate.Latitude,
-		PickupLongitude:      req.PickupCoordinate.Longitude,
-		DestinationLatitude:  req.DestinationCoordinate.Latitude,
-		DestinationLongitude: req.DestinationCoordinate.Longitude,
-		CreatedAt:            now,
-		UpdatedAt:            now,
-	}
-	lazyDo, err = createRideStatus(tmpRide, "MATCHING")
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-
 	// 初回利用クーポンは初回に必ず使われるしこれだけでok
 	if amount, ok := getUnusedCoupon(user.ID); ok {
 		useUnusedCoupon(user.ID)
@@ -338,17 +290,27 @@ func appPostRides(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fare, err := calculateDiscountedFare(user.ID, &ride, req.PickupCoordinate.Latitude, req.PickupCoordinate.Longitude, req.DestinationCoordinate.Latitude, req.DestinationCoordinate.Longitude)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
+	fare := calculateDiscountedFare(user.ID, &ride, req.PickupCoordinate.Latitude, req.PickupCoordinate.Longitude, req.DestinationCoordinate.Latitude, req.DestinationCoordinate.Longitude)
+	// if err != nil {
+	// 	writeError(w, http.StatusInternalServerError, err)
+	// 	return
+	// }
 
 	if err := tx.Commit(); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	lazyDo()
+	rideTmp := &Ride{
+		ID:                   rideID,
+		UserID:               user.ID,
+		PickupLatitude:       req.PickupCoordinate.Latitude,
+		PickupLongitude:      req.PickupCoordinate.Longitude,
+		DestinationLatitude:  req.DestinationCoordinate.Latitude,
+		DestinationLongitude: req.DestinationCoordinate.Longitude,
+		CreatedAt:            now,
+		UpdatedAt:            now,
+	}
+	processRideStatus(rideTmp, "MATCHING")
 
 	writeJSON(w, http.StatusAccepted, &appPostRidesResponse{
 		RideID: rideID,
@@ -380,11 +342,7 @@ func appPostRidesEstimatedFare(w http.ResponseWriter, r *http.Request) {
 
 	user := ctx.Value("user").(*User)
 
-	discounted, err := calculateDiscountedFare(user.ID, nil, req.PickupCoordinate.Latitude, req.PickupCoordinate.Longitude, req.DestinationCoordinate.Latitude, req.DestinationCoordinate.Longitude)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
+	discounted := calculateDiscountedFare(user.ID, nil, req.PickupCoordinate.Latitude, req.PickupCoordinate.Longitude, req.DestinationCoordinate.Latitude, req.DestinationCoordinate.Longitude)
 
 	writeJSON(w, http.StatusOK, &appPostRidesEstimatedFareResponse{
 		Fare:     discounted,
@@ -414,7 +372,6 @@ type appPostRideEvaluationResponse struct {
 func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	rideID := r.PathValue("ride_id")
-	lazyDo := func() {}
 
 	req := &appPostRideEvaluationRequest{}
 	if err := bindJSON(r, req); err != nil {
@@ -468,12 +425,6 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	lazyDo, err = createRideStatus(ride, "COMPLETED")
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-
 	if err := tx.GetContext(ctx, ride, `SELECT * FROM rides WHERE id = ?`, rideID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			writeError(w, http.StatusNotFound, errors.New("ride not found"))
@@ -493,11 +444,7 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fare, err := calculateDiscountedFare(ride.UserID, ride, ride.PickupLatitude, ride.PickupLongitude, ride.DestinationLatitude, ride.DestinationLongitude)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
+	fare := calculateDiscountedFare(ride.UserID, ride, ride.PickupLatitude, ride.PickupLongitude, ride.DestinationLatitude, ride.DestinationLongitude)
 	paymentGatewayRequest := &paymentGatewayPostPaymentRequest{
 		Amount: fare,
 	}
@@ -521,7 +468,7 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	lazyDo()
+	processRideStatus(ride, "COMPLETED")
 
 	writeJSON(w, http.StatusOK, &appPostRideEvaluationResponse{
 		CompletedAt: ride.UpdatedAt.UnixMilli(),
@@ -599,11 +546,7 @@ func appGetNotification(w http.ResponseWriter, r *http.Request) {
 }
 
 func getAppNotification(user *User, ride *Ride, rideStatus string) (*appGetNotificationResponse, error) {
-	fare, err := calculateDiscountedFare(user.ID, ride, ride.PickupLatitude, ride.PickupLongitude, ride.DestinationLatitude, ride.DestinationLongitude)
-	if err != nil {
-		return nil, err
-	}
-
+	fare := calculateDiscountedFare(user.ID, ride, ride.PickupLatitude, ride.PickupLongitude, ride.DestinationLatitude, ride.DestinationLongitude)
 	response := &appGetNotificationResponse{
 		Data: &appGetNotificationResponseData{
 			RideID: ride.ID,
@@ -638,7 +581,7 @@ func getAppNotification(user *User, ride *Ride, rideStatus string) (*appGetNotif
 
 func getChairStats(chairID string) appGetNotificationResponseChairStats {
 	stats := appGetNotificationResponseChairStats{}
-	statsCache := getChairStatsCache(chairID)
+	statsCache, _ := getChairStatsCache(chairID)
 	stats.TotalRidesCount = statsCache.RideCount
 	if statsCache.RideCount > 0 {
 		stats.TotalEvaluationAvg = statsCache.TotalEvaluation / float64(statsCache.RideCount)
@@ -724,7 +667,7 @@ func calculateFare(pickupLatitude, pickupLongitude, destLatitude, destLongitude 
 	return initialFare + meteredFare
 }
 
-func calculateDiscountedFare(userID string, ride *Ride, pickupLatitude, pickupLongitude, destLatitude, destLongitude int) (int, error) {
+func calculateDiscountedFare(userID string, ride *Ride, pickupLatitude, pickupLongitude, destLatitude, destLongitude int) int {
 	discount := 0
 	if ride != nil {
 		destLatitude = ride.DestinationLatitude
@@ -745,5 +688,5 @@ func calculateDiscountedFare(userID string, ride *Ride, pickupLatitude, pickupLo
 	meteredFare := farePerDistance * calculateDistance(pickupLatitude, pickupLongitude, destLatitude, destLongitude)
 	discountedMeteredFare := max(meteredFare-discount, 0)
 
-	return initialFare + discountedMeteredFare, nil
+	return initialFare + discountedMeteredFare
 }

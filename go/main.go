@@ -162,8 +162,19 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, cl := range chairLocations {
-		lazyDo, _ := createChairLocation(cl.ID, cl.ChairID, cl.Latitude, cl.Longitude, cl.CreatedAt)
-		lazyDo()
+		chairLocation := ChairLocation{
+			ID:        cl.ID,
+			ChairID:   cl.ChairID,
+			Latitude:  cl.Latitude,
+			Longitude: cl.Longitude,
+			CreatedAt: cl.CreatedAt,
+		}
+		before, ok := getLatestChairLocationChacke(cl.ChairID)
+		createChairLocation(cl.ChairID, chairLocation)
+		if ok {
+			distance := calculateDistance(before.Latitude, before.Longitude, cl.Latitude, cl.Longitude)
+			createChairTotalDistanceCache(cl.ChairID, distance, cl.CreatedAt)
+		}
 	}
 
 	chairModels := []ChairModel{}

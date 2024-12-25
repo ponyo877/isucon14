@@ -103,18 +103,6 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	chair := ctx.Value("chair").(*Chair)
-	lazyDo := func() {}
-	lazyDo2 := func() {}
-
-	var err error
-
-	chairLocationID := ulid.Make().String()
-	now := time.Now()
-	lazyDo2, err = createChairLocation(chairLocationID, chair.ID, req.Latitude, req.Longitude, now)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
 
 	ride := &Ride{}
 	rideAny, ok := latestRideCache.Load(chair.ID)
@@ -124,25 +112,29 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 		status := getLatestRideStatus(ride.ID)
 		if status != "COMPLETED" && status != "CANCELED" {
 			if req.Latitude == ride.PickupLatitude && req.Longitude == ride.PickupLongitude && status == "ENROUTE" {
-				lazyDo, err = createRideStatus(ride, "PICKUP")
-				if err != nil {
-					writeError(w, http.StatusInternalServerError, err)
-					return
-				}
+				processRideStatus(ride, "PICKUP")
 			}
 
 			if req.Latitude == ride.DestinationLatitude && req.Longitude == ride.DestinationLongitude && status == "CARRYING" {
-				lazyDo, err = createRideStatus(ride, "ARRIVED")
-				if err != nil {
-					writeError(w, http.StatusInternalServerError, err)
-					return
-				}
+				processRideStatus(ride, "ARRIVED")
 			}
 		}
 	}
-
-	lazyDo()
-	lazyDo2()
+	id := ulid.Make().String()
+	now := time.Now()
+	chairLocation := ChairLocation{
+		ID:        id,
+		ChairID:   chair.ID,
+		Latitude:  req.Latitude,
+		Longitude: req.Longitude,
+		CreatedAt: now,
+	}
+	before, ok := getLatestChairLocationChacke(chair.ID)
+	createChairLocation(chair.ID, chairLocation)
+	if ok {
+		distance := calculateDistance(before.Latitude, before.Longitude, req.Latitude, req.Longitude)
+		createChairTotalDistanceCache(chair.ID, distance, now)
+	}
 
 	writeJSON(w, http.StatusOK, &chairPostCoordinateResponse{
 		RecordedAt: now.UnixMilli(),
@@ -250,7 +242,6 @@ func chairPostRideStatus(w http.ResponseWriter, r *http.Request) {
 	rideID := r.PathValue("ride_id")
 
 	chair := ctx.Value("chair").(*Chair)
-	lazyDo := func() {}
 
 	req := &postChairRidesRideIDStatusRequest{}
 	if err := bindJSON(r, req); err != nil {
@@ -280,14 +271,11 @@ func chairPostRideStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var targetStatus string
 	switch req.Status {
 	// Acknowledge the ride
 	case "ENROUTE":
-		lazyDo, err = createRideStatus(ride, "ENROUTE")
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
+		targetStatus = "ENROUTE"
 	// After Picking up user
 	case "CARRYING":
 		status := getLatestRideStatus(ride.ID)
@@ -295,11 +283,7 @@ func chairPostRideStatus(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, errors.New("chair has not arrived yet"))
 			return
 		}
-		lazyDo, err = createRideStatus(ride, "CARRYING")
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
+		targetStatus = "CARRYING"
 	default:
 		writeError(w, http.StatusBadRequest, errors.New("invalid status"))
 	}
@@ -308,7 +292,9 @@ func chairPostRideStatus(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	lazyDo()
+	if targetStatus != "" {
+		processRideStatus(ride, targetStatus)
+	}
 
 	w.WriteHeader(http.StatusNoContent)
 }

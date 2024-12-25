@@ -89,75 +89,83 @@ func getLatestRideStatus(rideID string) string {
 	return status.(string)
 }
 
-func createRideStatus(ride *Ride, status string) (func(), error) {
-	id := ulid.Make().String()
-	// _, err := tx.ExecContext(
-	// 	ctx,
-	// 	`INSERT INTO ride_statuses (id, ride_id, status) VALUES (?, ?, ?)`,
-	// 	id, ride.ID, status,
-	// )
-	lazyDo := func() {
-		latestRideStatusCache.Store(ride.ID, status)
-		notif := Notif{
-			Ride:         ride,
-			RideStatusID: id,
-			RideStatus:   status,
-		}
-		appChan, ok := appNotifChan.Load(ride.UserID)
-		if !ok {
-			appNotifChan.Store(ride.UserID, make(chan Notif, 5))
-			appChan, _ = appNotifChan.Load(ride.UserID)
-		}
-		appChan.(chan Notif) <- notif
-		if ride.ChairID.Valid {
-			chairChan, ok := chairNotifChan.Load(ride.ChairID.String)
-			if !ok {
-				chairNotifChan.Store(ride.ChairID.String, make(chan Notif, 5))
-				chairChan, _ = chairNotifChan.Load(ride.ChairID.String)
-			}
-			chairChan.(chan Notif) <- notif
-		}
-		if status == "COMPLETED" {
-			chairSales := []ChairSale{}
-			if salesAny, ok := chairSaleCache.Load(ride.ChairID.String); ok {
-				chairSales = salesAny.([]ChairSale)
-			}
-			chairSales = append(chairSales, ChairSale{
-				Sale:      calculateSale(*ride),
-				UpdatedAt: ride.UpdatedAt,
-			})
-			chairSaleCache.Store(ride.ChairID.String, chairSales)
-		}
-	}
-
-	return lazyDo, nil
+func createRideStatus(rideID string, status string) {
+	latestRideStatusCache.Store(rideID, status)
 }
 
-func createChairLocation(id, chairID string, latitude, longitude int, now time.Time) (func(), error) {
-	lazyDo := func() {
-		chairLoctionAny, ok := latestChairLocation.Load(chairID)
-		if ok {
-			before := chairLoctionAny.(ChairLocation)
-			distance := calculateDistance(before.Latitude, before.Longitude, latitude, longitude)
-			currentTotalDistance := 0
-			if currentAny, ok := chairTotalDistanceCache.Load(chairID); ok {
-				current := currentAny.(TotalDistance)
-				currentTotalDistance = current.TotalDistance
-			}
-			chairTotalDistanceCache.Store(chairID, TotalDistance{
-				TotalDistance: currentTotalDistance + distance,
-				UpdatedAt:     now,
-			})
-		}
-		latestChairLocation.Store(chairID, ChairLocation{
-			ID:        id,
-			ChairID:   chairID,
-			Latitude:  latitude,
-			Longitude: longitude,
-			CreatedAt: now,
-		})
+func processRideStatus(ride *Ride, status string) {
+	createRideStatus(ride.ID, status)
+	id := ulid.Make().String()
+	notif := Notif{
+		Ride:         ride,
+		RideStatusID: id,
+		RideStatus:   status,
 	}
-	return lazyDo, nil
+	publishAppChan(ride.UserID, notif)
+	if ride.ChairID.Valid {
+		publishChairChan(ride.ChairID.String, notif)
+	}
+	if status == "COMPLETED" {
+		createChairSaleCache(ride)
+	}
+}
+
+func publishAppChan(userID string, notif Notif) {
+	appChan, ok := appNotifChan.Load(userID)
+	if !ok {
+		appNotifChan.Store(userID, make(chan Notif, 5))
+		appChan, _ = appNotifChan.Load(userID)
+	}
+	appChan.(chan Notif) <- notif
+}
+
+func publishChairChan(chairID string, notif Notif) {
+	chairChan, ok := chairNotifChan.Load(chairID)
+	if !ok {
+		chairNotifChan.Store(chairID, make(chan Notif, 5))
+		chairChan, _ = chairNotifChan.Load(chairID)
+	}
+	chairChan.(chan Notif) <- notif
+}
+
+func createChairSaleCache(ride *Ride) {
+	chairSales := []ChairSale{}
+	if salesAny, ok := chairSaleCache.Load(ride.ChairID.String); ok {
+		chairSales = salesAny.([]ChairSale)
+	}
+	chairSales = append(chairSales, ChairSale{
+		Sale:      calculateSale(*ride),
+		UpdatedAt: ride.UpdatedAt,
+	})
+	chairSaleCache.Store(ride.ChairID.String, chairSales)
+}
+
+func createChairLocation(chairID string, chairLocation ChairLocation) {
+	latestChairLocation.Store(chairID, chairLocation)
+}
+
+func getLatestChairLocationChacke(chairID string) (ChairLocation, bool) {
+	latest, ok := latestChairLocation.Load(chairID)
+	if !ok {
+		return ChairLocation{}, false
+	}
+	return latest.(ChairLocation), ok
+}
+
+func getChairTotalDistanceCache(chairID string) (TotalDistance, bool) {
+	totalDistance, ok := chairTotalDistanceCache.Load(chairID)
+	if !ok {
+		return TotalDistance{}, false
+	}
+	return totalDistance.(TotalDistance), ok
+}
+
+func createChairTotalDistanceCache(chairID string, distance int, now time.Time) {
+	current, _ := getChairTotalDistanceCache(chairID)
+	chairTotalDistanceCache.Store(chairID, TotalDistance{
+		TotalDistance: current.TotalDistance + distance,
+		UpdatedAt:     now,
+	})
 }
 
 func getLatestChairLocation(chairID string) ChairLocation {
@@ -167,25 +175,26 @@ func getLatestChairLocation(chairID string) ChairLocation {
 	return ChairLocation{}
 }
 
-func getChairStatsCache(chairID string) ChairStats {
-	if stats, ok := chairStatsCache.Load(chairID); ok {
-		return stats.(ChairStats)
+func getChairStatsCache(chairID string) (ChairStats, bool) {
+	stats, ok := chairStatsCache.Load(chairID)
+	if !ok {
+		return ChairStats{}, false
 	}
-	return ChairStats{}
+	return stats.(ChairStats), ok
 }
 
 func addChairStatsCache(chairID string, evaluation int) {
-	if statsAny, ok := chairStatsCache.Load(chairID); ok {
-		stats := statsAny.(ChairStats)
-		stats.RideCount++
-		stats.TotalEvaluation += float64(evaluation)
-		chairStatsCache.Store(chairID, stats)
+	stats, ok := getChairStatsCache(chairID)
+	if !ok {
+		chairStatsCache.Store(chairID, ChairStats{
+			RideCount:       1,
+			TotalEvaluation: float64(evaluation),
+		})
 		return
 	}
-	chairStatsCache.Store(chairID, ChairStats{
-		RideCount:       1,
-		TotalEvaluation: float64(evaluation),
-	})
+	stats.RideCount++
+	stats.TotalEvaluation += float64(evaluation)
+	chairStatsCache.Store(chairID, stats)
 }
 
 func getChairAccessToken(token string) (Chair, bool) {

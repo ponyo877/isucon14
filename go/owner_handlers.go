@@ -195,24 +195,18 @@ func ownerGetChairs(w http.ResponseWriter, r *http.Request) {
 	chairs, _ := getChairsOwnerIDCache(owner.ID)
 	res := ownerGetChairResponse{}
 	for _, chair := range chairs {
-		totalDistance := 0
-		var totalDistanceUpdatedAt *int64
-		if totalAny, ok := chairTotalDistanceCache.Load(chair.ID); ok {
-			total := totalAny.(TotalDistance)
-			totalDistance = total.TotalDistance
-			temp := total.UpdatedAt.UnixMilli()
-			totalDistanceUpdatedAt = &temp
-		}
+		current, ok := getChairTotalDistanceCache(chair.ID)
 		c := ownerGetChairResponseChair{
 			ID:            chair.ID,
 			Name:          chair.Name,
 			Model:         chair.Model,
 			Active:        chair.IsActive, // 初回以降更新してないのになぜか通る
 			RegisteredAt:  chair.CreatedAt.UnixMilli(),
-			TotalDistance: totalDistance,
+			TotalDistance: current.TotalDistance,
 		}
-		if totalDistanceUpdatedAt != nil {
-			c.TotalDistanceUpdatedAt = totalDistanceUpdatedAt
+		if ok {
+			temp := current.UpdatedAt.UnixMilli()
+			c.TotalDistanceUpdatedAt = &temp
 		}
 		res.Chairs = append(res.Chairs, c)
 	}
