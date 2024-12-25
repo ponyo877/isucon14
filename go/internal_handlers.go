@@ -117,6 +117,7 @@ func internalGetMatching(w http.ResponseWriter, r *http.Request) {
 		freeChairsCache.Remove(chairID)
 		ride.ChairID = sql.NullString{String: chairID, Valid: true}
 		createRideCache(ride.ID, ride)
+		createUserRideStatusCache(ride.UserID, false)
 		latestRideCache.Store(chairID, ride)
 		chairChan, ok := chairNotifChan.Load(chairID)
 		if !ok {

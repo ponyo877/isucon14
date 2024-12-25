@@ -58,6 +58,7 @@ var (
 	userInvCache                 = sync.Map{}
 	rideCache                    = sync.Map{}
 	paymentTokenCache            = sync.Map{}
+	userRideStatusCache          = sync.Map{}
 	freeChairsCache              = NewFreeChairs()
 )
 
@@ -85,6 +86,7 @@ func initCache() {
 	userInvCache = sync.Map{}
 	rideCache = sync.Map{}
 	paymentTokenCache = sync.Map{}
+	userRideStatusCache = sync.Map{}
 	freeChairsCache = NewFreeChairs()
 }
 
@@ -114,6 +116,7 @@ func processRideStatus(ride *Ride, status string) {
 	}
 	if status == "COMPLETED" {
 		createChairSaleCache(ride)
+		createUserRideStatusCache(ride.UserID, true)
 	}
 }
 
@@ -464,4 +467,16 @@ func getPaymentTokenCache(userID string) (string, bool) {
 
 func createPaymentTokenCache(userID string, token string) {
 	paymentTokenCache.Store(userID, token)
+}
+
+func getUserRideStatusCache(userID string) (bool, bool) {
+	isFree, ok := userRideStatusCache.Load(userID)
+	if !ok {
+		return false, false
+	}
+	return isFree.(bool), ok
+}
+
+func createUserRideStatusCache(userID string, isFree bool) {
+	userRideStatusCache.Store(userID, isFree)
 }

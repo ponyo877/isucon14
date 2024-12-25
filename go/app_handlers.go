@@ -54,6 +54,7 @@ func appPostUsers(w http.ResponseWriter, r *http.Request) {
 	}
 	createUserCache(userID, user)
 	createUserInvCache(invitationCode, user)
+	createUserRideStatusCache(userID, true)
 
 	// 初回登録キャンペーンのクーポンを付与
 	addUnusedCoupon(userID, 3000)
@@ -239,21 +240,8 @@ func appPostRides(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 
-	rides := []Ride{}
-	if err := tx.SelectContext(ctx, &rides, `SELECT * FROM rides WHERE user_id = ?`, user.ID); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-
-	continuingRideCount := 0
-	for _, ride := range rides {
-		status, _ := getLatestRideStatus(ride.ID)
-		if status != "COMPLETED" {
-			continuingRideCount++
-		}
-	}
-
-	if continuingRideCount > 0 {
+	isFree, _ := getUserRideStatusCache(user.ID)
+	if !isFree {
 		writeError(w, http.StatusConflict, errors.New("ride already exists"))
 		return
 	}
