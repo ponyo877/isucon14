@@ -19,27 +19,27 @@ func internalGetMatching(w http.ResponseWriter, r *http.Request) {
 	freeChairsCache.Lock()
 	chairs := freeChairsCache.List()
 	freeChairsCache.Unlock()
-	if len(chairs) == 0 {
+	if len(chairs) < 5 {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	tmp := waitingRidesCache.List()
-	if len(tmp) == 0 {
+	rides := waitingRidesCache.List()
+	if len(rides) == 0 {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	fmt.Printf("[DEBUG] chairs, rides: %d, %d\n", len(chairs), len(tmp))
-	slices.SortFunc(tmp, func(a, b Ride) int {
+	fmt.Printf("[DEBUG] chairs, rides: %d, %d\n", len(chairs), len(rides))
+	slices.SortFunc(rides, func(a, b Ride) int {
 		if a.CreatedAt.Before(b.CreatedAt) {
 			return -1
 		}
 		return 0
 	})
-	min := 2 * len(chairs)
-	if len(tmp) < min {
-		min = len(tmp)
+	min := 4 * len(chairs)
+	if len(rides) < min {
+		min = len(rides)
 	}
-	rides := tmp[:min]
+	rides = rides[:min]
 
 	n := len(rides) + len(chairs) + 2
 	// 最小費用流
