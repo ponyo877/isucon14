@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/oklog/ulid/v2"
@@ -93,13 +94,54 @@ type chairPostCoordinateResponse struct {
 	RecordedAt int64 `json:"recorded_at"`
 }
 
+func posComma(b []byte) int {
+	if b[13] == 44 {
+		return 13
+	}
+	if b[14] == 44 {
+		return 14
+	}
+	if b[15] == 44 {
+		return 15
+	}
+	return -1
+}
+
+func byteToInt(b []byte) int {
+	sign := 1
+	if b[0] == 45 {
+		b = b[1:]
+		sign = -1
+	}
+	n := 0
+	for _, ch := range b {
+		ch -= '0'
+		n = n*10 + int(ch)
+	}
+	return sign * n
+}
+
+func chairPostCoordinateBindJSON(r *http.Request, req *Coordinate) {
+	len := r.ContentLength
+	body := make([]byte, len)
+	r.Body.Read(body)
+	pos := posComma(body)
+	req.Latitude = byteToInt(body[12:pos])
+	req.Longitude = byteToInt(body[pos+13 : len-1])
+}
+
+func chairPostCoordinateWriteJSON(w http.ResponseWriter, now time.Time) {
+	w.Header().Set("Content-Type", "application/json;charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"recorded_at":`))
+	w.Write([]byte(strconv.FormatInt(now.UnixMilli(), 10)))
+	w.Write([]byte("}"))
+}
+
 func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	req := &Coordinate{}
-	if err := bindJSON(r, req); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
+	chairPostCoordinateBindJSON(r, req)
 
 	chair := ctx.Value("chair").(*Chair)
 
@@ -135,9 +177,7 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 		createChairTotalDistanceCache(chair.ID, distance, now)
 	}
 
-	writeJSON(w, http.StatusOK, &chairPostCoordinateResponse{
-		RecordedAt: now.UnixMilli(),
-	})
+	chairPostCoordinateWriteJSON(w, now)
 }
 
 type simpleUser struct {
