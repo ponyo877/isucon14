@@ -87,8 +87,8 @@ func internalGetMatching(w http.ResponseWriter, r *http.Request) {
 			chairIDsComma += ","
 			rideIDsComma += ","
 		}
-		chairIDsComma += fmt.Sprintf("'%s'", chair.ID)
-		rideIDsComma += fmt.Sprintf("'%s'", ride.ID)
+		chairIDsComma += "'" + chair.ID + "'"
+		rideIDsComma += "'" + ride.ID + "'"
 	}
 	for _, e := range edges {
 		// 流量のあるEdgeだけを見る(source, sinkは除く)
@@ -104,7 +104,10 @@ func internalGetMatching(w http.ResponseWriter, r *http.Request) {
 		waitingRidesCache.Remove(ride.ID)
 		createRideCache(ride.ID, ride)
 		createUserRideStatusCache(ride.UserID, false)
-		notif := Notif{Ride: &ride}
+		notif := Notif{
+			Ride:       &ride,
+			RideStatus: "MATCHING",
+		}
 		publishChairChan(chairID, notif)
 		publishAppChan(ride.UserID, notif)
 	}

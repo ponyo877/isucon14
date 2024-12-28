@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -416,12 +415,16 @@ func appGetNotification(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				return
 			}
-			_, err = fmt.Fprintf(w, "data: %s\n\n", string(resV))
-			if err != nil {
+			if _, err := w.Write([]byte("data: ")); err != nil {
 				return
 			}
-			err = rc.Flush()
-			if err != nil {
+			if _, err := w.Write(resV); err != nil {
+				return
+			}
+			if _, err := w.Write([]byte("\n\n")); err != nil {
+				return
+			}
+			if err := rc.Flush(); err != nil {
 				return
 			}
 			if notif.RideStatus == "COMPLETED" {

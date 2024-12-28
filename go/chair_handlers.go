@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -221,7 +220,7 @@ func chairGetNotification(w http.ResponseWriter, r *http.Request) {
 		case <-clientGone:
 			return
 		case notif := <-chairChan.(chan Notif):
-			response, err := getChairNotification(notif.Ride)
+			response, err := getChairNotification(notif.Ride, notif.RideStatus)
 			if err != nil {
 				return
 			}
@@ -229,12 +228,16 @@ func chairGetNotification(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				return
 			}
-			_, err = fmt.Fprintf(w, "data: %s\n\n", string(resV))
-			if err != nil {
+			if _, err := w.Write([]byte("data: ")); err != nil {
 				return
 			}
-			err = rc.Flush()
-			if err != nil {
+			if _, err := w.Write(resV); err != nil {
+				return
+			}
+			if _, err := w.Write([]byte("\n\n")); err != nil {
+				return
+			}
+			if err := rc.Flush(); err != nil {
 				return
 			}
 			if notif.RideStatus == "COMPLETED" {
@@ -249,9 +252,7 @@ func chairGetNotification(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func getChairNotification(ride *Ride) (*chairGetNotificationResponse, error) {
-	rideStatus, _ := getLatestRideStatus(ride.ID)
-
+func getChairNotification(ride *Ride, rideStatus string) (*chairGetNotificationResponse, error) {
 	user, ok := getUserCache(ride.UserID)
 	if !ok {
 		return nil, errors.New("user not found")
@@ -262,7 +263,7 @@ func getChairNotification(ride *Ride) (*chairGetNotificationResponse, error) {
 			RideID: ride.ID,
 			User: simpleUser{
 				ID:   user.ID,
-				Name: fmt.Sprintf("%s %s", user.Firstname, user.Lastname),
+				Name: user.Firstname + " " + user.Lastname,
 			},
 			PickupCoordinate: Coordinate{
 				Latitude:  ride.PickupLatitude,
