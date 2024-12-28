@@ -143,13 +143,6 @@ func appGetRides(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	user := ctx.Value("user").(*User)
 
-	tx, err := db.Beginx()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-	defer tx.Rollback()
-
 	rideIDs, _ := listRideIDsUserIDCache(user.ID)
 
 	items := []getAppRidesResponseItem{}
@@ -182,11 +175,6 @@ func appGetRides(w http.ResponseWriter, r *http.Request) {
 		item.Chair.Owner = owner.Name
 
 		items = append(items, item)
-	}
-
-	if err := tx.Commit(); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
 	}
 
 	writeJSON(w, http.StatusOK, &getAppRidesResponse{
@@ -224,28 +212,12 @@ func appPostRides(w http.ResponseWriter, r *http.Request) {
 	user := ctx.Value("user").(*User)
 	rideID := ulid.Make().String()
 
-	tx, err := db.Beginx()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-	defer tx.Rollback()
-
 	isFree, _ := getUserRideStatusCache(user.ID)
 	if !isFree {
 		writeError(w, http.StatusConflict, errors.New("ride already exists"))
 		return
 	}
 	now := time.Now()
-	if _, err := tx.ExecContext(
-		ctx,
-		`INSERT INTO rides (id, user_id, pickup_latitude, pickup_longitude, destination_latitude, destination_longitude, created_at, updated_at)
-				  VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		rideID, user.ID, req.PickupCoordinate.Latitude, req.PickupCoordinate.Longitude, req.DestinationCoordinate.Latitude, req.DestinationCoordinate.Longitude, now, now,
-	); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
 	ride := Ride{
 		ID:                   rideID,
 		UserID:               user.ID,
@@ -258,6 +230,7 @@ func appPostRides(w http.ResponseWriter, r *http.Request) {
 	}
 	createRideCache(rideID, ride)
 	addRideIDsUserIDCache(user.ID, ride.ID)
+	waitingRidesCache.Add(ride)
 
 	// 初回利用クーポンは初回に必ず使われるしこれだけでok
 	if amount, ok := getUnusedCoupon(user.ID); ok {
@@ -265,25 +238,9 @@ func appPostRides(w http.ResponseWriter, r *http.Request) {
 		createRideDiscountCache(rideID, amount)
 	}
 
-	rideTmp := &Ride{
-		ID:                   rideID,
-		UserID:               user.ID,
-		PickupLatitude:       req.PickupCoordinate.Latitude,
-		PickupLongitude:      req.PickupCoordinate.Longitude,
-		DestinationLatitude:  req.DestinationCoordinate.Latitude,
-		DestinationLongitude: req.DestinationCoordinate.Longitude,
-		CreatedAt:            now,
-		UpdatedAt:            now,
-	}
+	fare := calculateDiscountedFare(user.ID, &ride, req.PickupCoordinate.Latitude, req.PickupCoordinate.Longitude, req.DestinationCoordinate.Latitude, req.DestinationCoordinate.Longitude)
 
-	fare := calculateDiscountedFare(user.ID, rideTmp, req.PickupCoordinate.Latitude, req.PickupCoordinate.Longitude, req.DestinationCoordinate.Latitude, req.DestinationCoordinate.Longitude)
-
-	if err := tx.Commit(); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-
-	processRideStatus(rideTmp, "MATCHING")
+	processRideStatus(&ride, "MATCHING")
 
 	writeJSON(w, http.StatusAccepted, &appPostRidesResponse{
 		RideID: rideID,
@@ -356,13 +313,6 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tx, err := db.Beginx()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-	defer tx.Rollback()
-
 	ride, ok := getRideCache(rideID)
 	if !ok {
 		writeError(w, http.StatusNotFound, errors.New("ride not found"))
@@ -401,11 +351,7 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := tx.Commit(); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-	processRideStatus(&ride, "COMPLETED")
+	defer processRideStatus(&ride, "COMPLETED")
 
 	writeJSON(w, http.StatusOK, &appPostRideEvaluationResponse{
 		CompletedAt: ride.UpdatedAt.UnixMilli(),
@@ -585,7 +531,6 @@ func appGetNearbyChairs(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		if _, ok := latestRideCache.Load(chair.ID); ok {
-			fmt.Printf("[DEBUG] chair %s is already in use\n", chair.ID)
 			continue
 		}
 		if calculateDistance(coordinate.Latitude, coordinate.Longitude, chairLocation.Latitude, chairLocation.Longitude) <= distance {

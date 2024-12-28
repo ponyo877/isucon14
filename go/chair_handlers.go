@@ -198,8 +198,12 @@ func chairGetNotification(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			if notif.RideStatus == "COMPLETED" {
-				freeChairsCache.Add(*chair)
-				latestRideCache.Delete(notif.Ride.ChairID.String)
+				go func() {
+					// evaluationの完了待ち
+					time.Sleep(50 * time.Millisecond)
+					freeChairsCache.Add(*chair)
+					latestRideCache.Delete(chair.ID)
+				}()
 			}
 		}
 	}
@@ -249,13 +253,6 @@ func chairPostRideStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tx, err := db.Beginx()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-	defer tx.Rollback()
-
 	ride, ok := getRideCache(rideID)
 	if !ok {
 		writeError(w, http.StatusNotFound, errors.New("ride not found"))
@@ -284,10 +281,6 @@ func chairPostRideStatus(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, errors.New("invalid status"))
 	}
 
-	if err := tx.Commit(); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
 	if targetStatus != "" {
 		processRideStatus(&ride, targetStatus)
 	}

@@ -61,6 +61,7 @@ var (
 	userRideStatusCache          = sync.Map{}
 	rideIDsUserIDCache           = sync.Map{}
 	freeChairsCache              = NewFreeChairs()
+	waitingRidesCache            = NewWaitingRides()
 )
 
 func initCache() {
@@ -90,6 +91,7 @@ func initCache() {
 	userRideStatusCache = sync.Map{}
 	rideIDsUserIDCache = sync.Map{}
 	freeChairsCache = NewFreeChairs()
+	waitingRidesCache = NewWaitingRides()
 }
 
 func getLatestRideStatus(rideID string) (string, bool) {
@@ -499,4 +501,53 @@ func addRideIDsUserIDCache(userID string, rideID string) {
 	}
 	rideIDs = append(rideIDs, rideID)
 	rideIDsUserIDCache.Store(userID, rideIDs)
+}
+
+type WaitingRides struct {
+	cache map[string]Ride
+	mu    sync.Mutex
+}
+
+func NewWaitingRides() *WaitingRides {
+	return &WaitingRides{
+		cache: map[string]Ride{},
+		mu:    sync.Mutex{},
+	}
+}
+func (w *WaitingRides) Lock() {
+	w.mu.Lock()
+}
+
+func (w *WaitingRides) Unlock() {
+	w.mu.Unlock()
+}
+
+func (w *WaitingRides) List() []Ride {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	rides := []Ride{}
+	for _, v := range w.cache {
+		rides = append(rides, v)
+	}
+	return rides
+}
+
+func (w *WaitingRides) Add(ride Ride) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.cache[ride.ID] = ride
+}
+
+func (w *WaitingRides) BulkRemove(rideIDs []string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	for _, rideID := range rideIDs {
+		delete(w.cache, rideID)
+	}
+}
+
+func (w *WaitingRides) Remove(rideID string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	delete(w.cache, rideID)
 }
