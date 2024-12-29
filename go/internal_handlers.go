@@ -29,13 +29,13 @@ func internalGetMatching(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	fmt.Printf("[DEBUG] chairs, rides: %d, %d\n", len(chairs), len(rides))
-	slices.SortFunc(rides, func(a, b Ride) int {
+	slices.SortFunc(rides, func(a, b *Ride) int {
 		if a.CreatedAt.Before(b.CreatedAt) {
 			return -1
 		}
 		return 0
 	})
-	min := 4 * len(chairs)
+	min := 2 * len(chairs)
 	if len(rides) < min {
 		min = len(rides)
 	}
@@ -53,7 +53,7 @@ func internalGetMatching(w http.ResponseWriter, r *http.Request) {
 	// chair -> ride
 	for i, c := range chairs {
 		for j, r := range rides {
-			cLoc, _ := getLatestChairLocation(c.ID)
+			cLoc, _ := getLatestChairLocationCache(c.ID)
 			distance := calculateDistance(cLoc.Latitude, cLoc.Longitude, r.PickupLatitude, r.PickupLongitude)
 			speed := 1
 			if s, ok := getChairSpeedbyName(c.Model); ok {
@@ -100,13 +100,13 @@ func internalGetMatching(w http.ResponseWriter, r *http.Request) {
 		ride := rides[e.To()-len(chairs)-1]
 
 		ride.ChairID = sql.NullString{String: chairID, Valid: true}
-		createLatestRide(chairID, &ride)
+		createLatestRide(chairID, ride)
 		freeChairsCache.Remove(chairID)
 		waitingRidesCache.Remove(ride.ID)
 		createRideCache(ride.ID, ride)
 		createUserRideStatusCache(ride.UserID, false)
-		notif := Notif{
-			Ride:       &ride,
+		notif := &Notif{
+			Ride:       ride,
 			RideStatus: "MATCHING",
 		}
 		publishChairChan(chairID, notif)

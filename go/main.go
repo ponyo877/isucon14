@@ -163,14 +163,14 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, cl := range chairLocations {
-		chairLocation := ChairLocation{
+		chairLocation := &ChairLocation{
 			ID:        cl.ID,
 			ChairID:   cl.ChairID,
 			Latitude:  cl.Latitude,
 			Longitude: cl.Longitude,
 			CreatedAt: cl.CreatedAt,
 		}
-		before, ok := getLatestChairLocationChacke(cl.ChairID)
+		before, ok := getLatestChairLocationCache(cl.ChairID)
 		createChairLocation(cl.ChairID, chairLocation)
 		if ok {
 			distance := calculateDistance(before.Latitude, before.Longitude, cl.Latitude, cl.Longitude)
@@ -229,7 +229,7 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, u := range users {
-		createAppAccessToken(u.AccessToken, u)
+		createAppAccessToken(u.AccessToken, &u)
 	}
 	chairs := []Chair{}
 	if err := db.SelectContext(ctx, &chairs, "SELECT * FROM chairs"); err != nil {
@@ -237,9 +237,9 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, c := range chairs {
-		createChairCache(c.ID, c)
-		createChairAccessToken(c.AccessToken, c)
-		createChairsOwnerIDCache(c.OwnerID, c)
+		createChairCache(c.ID, &c)
+		createChairAccessToken(c.AccessToken, &c)
+		createChairsOwnerIDCache(c.OwnerID, &c)
 	}
 	owners := []Owner{}
 	if err := db.SelectContext(ctx, &owners, "SELECT * FROM owners"); err != nil {
@@ -247,9 +247,9 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, o := range owners {
-		createOwnerAccessToken(o.AccessToken, o)
-		createOwnerCache(o.ID, o)
-		createOwnerChairRegisterTokenCache(o.ChairRegisterToken, o)
+		createOwnerAccessToken(o.AccessToken, &o)
+		createOwnerCache(o.ID, &o)
+		createOwnerChairRegisterTokenCache(o.ChairRegisterToken, &o)
 	}
 	codes := []string{}
 	if err := db.SelectContext(ctx, &codes, "SELECT code FROM coupons WHERE code like 'INV_%'"); err != nil {
@@ -294,8 +294,8 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, u := range users {
-		createUserCache(u.ID, u)
-		createUserInvCache(u.InvitationCode, u)
+		createUserCache(u.ID, &u)
+		createUserInvCache(u.InvitationCode, &u)
 	}
 	rides = []Ride{}
 	if err := db.SelectContext(ctx, &rides, "SELECT * FROM rides"); err != nil {
@@ -303,7 +303,7 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, r := range rides {
-		createRideCache(r.ID, r)
+		createRideCache(r.ID, &r)
 	}
 	if err := db.GetContext(ctx, &paymentGatewayURL, "SELECT value FROM settings WHERE name = 'payment_gateway_url'"); err != nil {
 		writeError(w, http.StatusInternalServerError, err)

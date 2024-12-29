@@ -39,7 +39,7 @@ func ownerPostOwners(w http.ResponseWriter, r *http.Request) {
 	accessToken := secureRandomStr(32)
 	chairRegisterToken := secureRandomStr(32)
 	now := time.Now()
-	owner := Owner{
+	owner := &Owner{
 		ID:                 ownerID,
 		Name:               req.Name,
 		AccessToken:        accessToken,
@@ -196,16 +196,16 @@ func ownerGetChairs(w http.ResponseWriter, r *http.Request) {
 	for _, chair := range chairs {
 		current, ok := getChairTotalDistanceCache(chair.ID)
 		c := ownerGetChairResponseChair{
-			ID:            chair.ID,
-			Name:          chair.Name,
-			Model:         chair.Model,
-			Active:        chair.IsActive, // 初回以降更新してないのになぜか通る
-			RegisteredAt:  chair.CreatedAt.UnixMilli(),
-			TotalDistance: current.TotalDistance,
+			ID:           chair.ID,
+			Name:         chair.Name,
+			Model:        chair.Model,
+			Active:       chair.IsActive, // 初回以降更新してないのになぜか通る
+			RegisteredAt: chair.CreatedAt.UnixMilli(),
 		}
 		if ok {
 			temp := current.UpdatedAt.UnixMilli()
 			c.TotalDistanceUpdatedAt = &temp
+			c.TotalDistance = current.TotalDistance
 		}
 		res.Chairs = append(res.Chairs, c)
 	}

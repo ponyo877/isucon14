@@ -20,7 +20,7 @@ func appAuthMiddleware(next http.Handler) http.Handler {
 			writeError(w, http.StatusUnauthorized, errors.New("invalid access token"))
 			return
 		}
-		ctx = context.WithValue(ctx, "user", &user)
+		ctx = context.WithValue(ctx, "user", user)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
@@ -40,7 +40,7 @@ func ownerAuthMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		ctx = context.WithValue(ctx, "owner", &owner)
+		ctx = context.WithValue(ctx, "owner", owner)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
@@ -60,7 +60,7 @@ func chairAuthMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		ctx = context.WithValue(ctx, "chair", &chair)
+		ctx = context.WithValue(ctx, "chair", chair)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

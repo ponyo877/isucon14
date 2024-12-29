@@ -125,7 +125,7 @@ func deleteLatestRideCache(chairID string) {
 func processRideStatus(ride *Ride, status string) {
 	createLatestRideStatus(ride.ID, status)
 	id := ulid.Make().String()
-	notif := Notif{
+	notif := &Notif{
 		Ride:         ride,
 		RideStatusID: id,
 		RideStatus:   status,
@@ -140,72 +140,75 @@ func processRideStatus(ride *Ride, status string) {
 	}
 }
 
-func getAppChan(userID string) chan Notif {
+func getAppChan(userID string) chan *Notif {
 	appChan, ok := appNotifChan.Load(userID)
 	if !ok {
-		appNotifChan.Store(userID, make(chan Notif, 5))
+		appNotifChan.Store(userID, make(chan *Notif, 5))
 		appChan, _ = appNotifChan.Load(userID)
 	}
-	return appChan.(chan Notif)
+	return appChan.(chan *Notif)
 }
 
-func getChairChan(chairID string) chan Notif {
+func getChairChan(chairID string) chan *Notif {
 	chairChan, ok := chairNotifChan.Load(chairID)
 	if !ok {
-		chairNotifChan.Store(chairID, make(chan Notif, 5))
+		chairNotifChan.Store(chairID, make(chan *Notif, 5))
 		chairChan, _ = chairNotifChan.Load(chairID)
 	}
-	return chairChan.(chan Notif)
+	return chairChan.(chan *Notif)
 }
 
-func publishAppChan(userID string, notif Notif) {
+func publishAppChan(userID string, notif *Notif) {
 	getAppChan(userID) <- notif
 }
 
-func publishChairChan(chairID string, notif Notif) {
+func publishChairChan(chairID string, notif *Notif) {
 	getChairChan(chairID) <- notif
 }
 
-func getChairSaleCache(chairID string) ([]ChairSale, bool) {
+func getChairSaleCache(chairID string) ([]*ChairSale, bool) {
 	sales, ok := chairSaleCache.Load(chairID)
 	if !ok {
-		return []ChairSale{}, false
+		return []*ChairSale{}, false
 	}
-	return sales.([]ChairSale), ok
+	return sales.([]*ChairSale), ok
 }
 
 func createChairSaleCache(ride *Ride) {
 	chairSales, _ := getChairSaleCache(ride.ChairID.String)
-	chairSales = append(chairSales, ChairSale{
+	chairSales = append(chairSales, &ChairSale{
 		Sale:      calculateSale(*ride),
 		UpdatedAt: ride.UpdatedAt,
 	})
 	chairSaleCache.Store(ride.ChairID.String, chairSales)
 }
 
-func createChairLocation(chairID string, chairLocation ChairLocation) {
+func createChairLocation(chairID string, chairLocation *ChairLocation) {
 	latestChairLocation.Store(chairID, chairLocation)
 }
 
-func getLatestChairLocationChacke(chairID string) (ChairLocation, bool) {
+func getLatestChairLocationCache(chairID string) (*ChairLocation, bool) {
 	latest, ok := latestChairLocation.Load(chairID)
 	if !ok {
-		return ChairLocation{}, false
+		return nil, false
 	}
-	return latest.(ChairLocation), ok
+	return latest.(*ChairLocation), ok
 }
 
-func getChairTotalDistanceCache(chairID string) (TotalDistance, bool) {
+func getChairTotalDistanceCache(chairID string) (*TotalDistance, bool) {
 	totalDistance, ok := chairTotalDistanceCache.Load(chairID)
 	if !ok {
-		return TotalDistance{}, false
+		return nil, false
 	}
-	return totalDistance.(TotalDistance), ok
+	return totalDistance.(*TotalDistance), ok
 }
 
 func createChairTotalDistanceCache(chairID string, distance int, now time.Time) {
-	current, _ := getChairTotalDistanceCache(chairID)
-	chairTotalDistanceCache.Store(chairID, TotalDistance{
+	current := &TotalDistance{}
+	if tmp, ok := getChairTotalDistanceCache(chairID); ok {
+		current = tmp
+	}
+	chairTotalDistanceCache.Store(chairID, &TotalDistance{
 		TotalDistance: current.TotalDistance + distance,
 		UpdatedAt:     now,
 	})
@@ -222,26 +225,18 @@ func createChairSpeedbyName(model string, speed int) {
 	chairSpeedbyName.Store(model, speed)
 }
 
-func getLatestChairLocation(chairID string) (ChairLocation, bool) {
-	loc, ok := latestChairLocation.Load(chairID)
-	if !ok {
-		return ChairLocation{}, false
-	}
-	return loc.(ChairLocation), ok
-}
-
-func getChairStatsCache(chairID string) (ChairStats, bool) {
+func getChairStatsCache(chairID string) (*ChairStats, bool) {
 	stats, ok := chairStatsCache.Load(chairID)
 	if !ok {
-		return ChairStats{}, false
+		return nil, false
 	}
-	return stats.(ChairStats), ok
+	return stats.(*ChairStats), ok
 }
 
 func addChairStatsCache(chairID string, evaluation int) {
 	stats, ok := getChairStatsCache(chairID)
 	if !ok {
-		chairStatsCache.Store(chairID, ChairStats{
+		chairStatsCache.Store(chairID, &ChairStats{
 			RideCount:       1,
 			TotalEvaluation: float64(evaluation),
 		})
@@ -252,41 +247,41 @@ func addChairStatsCache(chairID string, evaluation int) {
 	chairStatsCache.Store(chairID, stats)
 }
 
-func getChairAccessToken(token string) (Chair, bool) {
+func getChairAccessToken(token string) (*Chair, bool) {
 	chair, ok := chairAccessTokenCache.Load(token)
-	return chair.(Chair), ok
+	return chair.(*Chair), ok
 }
 
-func createChairAccessToken(token string, chair Chair) {
+func createChairAccessToken(token string, chair *Chair) {
 	chairAccessTokenCache.Store(token, chair)
 }
 
-func getAppAccessToken(token string) (User, bool) {
+func getAppAccessToken(token string) (*User, bool) {
 	user, ok := appAccessTokenCache.Load(token)
-	return user.(User), ok
+	return user.(*User), ok
 }
 
-func createAppAccessToken(token string, user User) {
+func createAppAccessToken(token string, user *User) {
 	appAccessTokenCache.Store(token, user)
 }
 
-func getOwnerAccessToken(token string) (Owner, bool) {
+func getOwnerAccessToken(token string) (*Owner, bool) {
 	owner, ok := ownerAccessTokenCache.Load(token)
-	return owner.(Owner), ok
+	return owner.(*Owner), ok
 }
 
-func createOwnerAccessToken(token string, owner Owner) {
+func createOwnerAccessToken(token string, owner *Owner) {
 	ownerAccessTokenCache.Store(token, owner)
 }
 
 type FreeChairs struct {
-	cache map[string]Chair
+	cache map[string]*Chair
 	mu    sync.Mutex
 }
 
 func NewFreeChairs() *FreeChairs {
 	return &FreeChairs{
-		cache: map[string]Chair{},
+		cache: map[string]*Chair{},
 		mu:    sync.Mutex{},
 	}
 }
@@ -298,15 +293,15 @@ func (f *FreeChairs) Unlock() {
 	f.mu.Unlock()
 }
 
-func (f *FreeChairs) List() []Chair {
-	chairs := []Chair{}
+func (f *FreeChairs) List() []*Chair {
+	chairs := []*Chair{}
 	for _, v := range f.cache {
 		chairs = append(chairs, v)
 	}
 	return chairs
 }
 
-func (f *FreeChairs) Add(chair Chair) {
+func (f *FreeChairs) Add(chair *Chair) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.cache[chair.ID] = chair
@@ -326,34 +321,34 @@ func (f *FreeChairs) Remove(chairID string) {
 	delete(f.cache, chairID)
 }
 
-func getOwnerCache(ownerID string) (Owner, bool) {
+func getOwnerCache(ownerID string) (*Owner, bool) {
 	owner, ok := ownerCache.Load(ownerID)
-	return owner.(Owner), ok
+	return owner.(*Owner), ok
 }
 
-func createOwnerCache(ownerID string, owner Owner) {
+func createOwnerCache(ownerID string, owner *Owner) {
 	ownerCache.Store(ownerID, owner)
 }
 
-func getOwnerChairRegisterTokenCache(chairRegisterToken string) (Owner, bool) {
+func getOwnerChairRegisterTokenCache(chairRegisterToken string) (*Owner, bool) {
 	owner, ok := ownerChairRegisterTokenCache.Load(chairRegisterToken)
-	return owner.(Owner), ok
+	return owner.(*Owner), ok
 }
 
-func createOwnerChairRegisterTokenCache(chairRegisterToken string, owner Owner) {
+func createOwnerChairRegisterTokenCache(chairRegisterToken string, owner *Owner) {
 	ownerChairRegisterTokenCache.Store(chairRegisterToken, owner)
 }
 
-func getChairsOwnerIDCache(ownerID string) ([]Chair, bool) {
+func getChairsOwnerIDCache(ownerID string) ([]*Chair, bool) {
 	chairs, ok := chairsOwnerIDCache.Load(ownerID)
 	if !ok {
-		return []Chair{}, false
+		return []*Chair{}, false
 	}
-	return chairs.([]Chair), ok
+	return chairs.([]*Chair), ok
 }
 
-func createChairsOwnerIDCache(ownerID string, chair Chair) {
-	chairs := []Chair{}
+func createChairsOwnerIDCache(ownerID string, chair *Chair) {
+	chairs := []*Chair{}
 	tmp, ok := getChairsOwnerIDCache(ownerID)
 	if ok {
 		chairs = tmp
@@ -362,12 +357,12 @@ func createChairsOwnerIDCache(ownerID string, chair Chair) {
 	chairsOwnerIDCache.Store(ownerID, chairs)
 }
 
-func getChairCache(chairID string) (Chair, bool) {
+func getChairCache(chairID string) (*Chair, bool) {
 	chair, ok := chairCache.Load(chairID)
-	return chair.(Chair), ok
+	return chair.(*Chair), ok
 }
 
-func createChairCache(chairID string, chair Chair) {
+func createChairCache(chairID string, chair *Chair) {
 	chairCache.Store(chairID, chair)
 }
 
@@ -465,39 +460,39 @@ func createRideDiscountCache(rideID string, discount int) {
 	rideDiscountCache.Store(rideID, discount)
 }
 
-func getUserCache(userID string) (User, bool) {
+func getUserCache(userID string) (*User, bool) {
 	user, ok := userCache.Load(userID)
 	if !ok {
-		return User{}, false
+		return nil, false
 	}
-	return user.(User), ok
+	return user.(*User), ok
 }
 
-func createUserCache(userID string, user User) {
+func createUserCache(userID string, user *User) {
 	userCache.Store(userID, user)
 }
 
-func getUserInvCache(code string) (User, bool) {
+func getUserInvCache(code string) (*User, bool) {
 	user, ok := userInvCache.Load(code)
 	if !ok {
-		return User{}, false
+		return nil, false
 	}
-	return user.(User), ok
+	return user.(*User), ok
 }
 
-func createUserInvCache(code string, user User) {
+func createUserInvCache(code string, user *User) {
 	userInvCache.Store(code, user)
 }
 
-func getRideCache(rideID string) (Ride, bool) {
+func getRideCache(rideID string) (*Ride, bool) {
 	ride, ok := rideCache.Load(rideID)
 	if !ok {
-		return Ride{}, false
+		return nil, false
 	}
-	return ride.(Ride), ok
+	return ride.(*Ride), ok
 }
 
-func createRideCache(rideID string, ride Ride) {
+func createRideCache(rideID string, ride *Ride) {
 	rideCache.Store(rideID, ride)
 }
 
@@ -544,13 +539,13 @@ func addRideIDsUserIDCache(userID string, rideID string) {
 }
 
 type WaitingRides struct {
-	cache map[string]Ride
+	cache map[string]*Ride
 	mu    sync.Mutex
 }
 
 func NewWaitingRides() *WaitingRides {
 	return &WaitingRides{
-		cache: map[string]Ride{},
+		cache: map[string]*Ride{},
 		mu:    sync.Mutex{},
 	}
 }
@@ -562,17 +557,17 @@ func (w *WaitingRides) Unlock() {
 	w.mu.Unlock()
 }
 
-func (w *WaitingRides) List() []Ride {
+func (w *WaitingRides) List() []*Ride {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	rides := []Ride{}
+	rides := []*Ride{}
 	for _, v := range w.cache {
 		rides = append(rides, v)
 	}
 	return rides
 }
 
-func (w *WaitingRides) Add(ride Ride) {
+func (w *WaitingRides) Add(ride *Ride) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.cache[ride.ID] = ride

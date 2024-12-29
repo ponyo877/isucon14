@@ -40,7 +40,7 @@ func appPostUsers(w http.ResponseWriter, r *http.Request) {
 	invitationCode := secureRandomStr(15)
 
 	now := time.Now()
-	user := User{
+	user := &User{
 		ID:             userID,
 		Username:       req.Username,
 		Firstname:      req.FirstName,
@@ -151,7 +151,7 @@ func appGetRides(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		ride, _ := getRideCache(rideID)
-		fare := calculateDiscountedFare(user.ID, &ride, ride.PickupLatitude, ride.PickupLongitude, ride.DestinationLatitude, ride.DestinationLongitude)
+		fare := calculateDiscountedFare(user.ID, ride, ride.PickupLatitude, ride.PickupLongitude, ride.DestinationLatitude, ride.DestinationLongitude)
 
 		item := getAppRidesResponseItem{
 			ID:                    ride.ID,
@@ -217,7 +217,7 @@ func appPostRides(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := time.Now()
-	ride := Ride{
+	ride := &Ride{
 		ID:                   rideID,
 		UserID:               user.ID,
 		PickupLatitude:       req.PickupCoordinate.Latitude,
@@ -237,9 +237,9 @@ func appPostRides(w http.ResponseWriter, r *http.Request) {
 		createRideDiscountCache(rideID, amount)
 	}
 
-	fare := calculateDiscountedFare(user.ID, &ride, req.PickupCoordinate.Latitude, req.PickupCoordinate.Longitude, req.DestinationCoordinate.Latitude, req.DestinationCoordinate.Longitude)
+	fare := calculateDiscountedFare(user.ID, ride, req.PickupCoordinate.Latitude, req.PickupCoordinate.Longitude, req.DestinationCoordinate.Latitude, req.DestinationCoordinate.Longitude)
 
-	processRideStatus(&ride, "MATCHING")
+	processRideStatus(ride, "MATCHING")
 
 	writeJSON(w, http.StatusAccepted, &appPostRidesResponse{
 		RideID: rideID,
@@ -336,7 +336,7 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fare := calculateDiscountedFare(ride.UserID, &ride, ride.PickupLatitude, ride.PickupLongitude, ride.DestinationLatitude, ride.DestinationLongitude)
+	fare := calculateDiscountedFare(ride.UserID, ride, ride.PickupLatitude, ride.PickupLongitude, ride.DestinationLatitude, ride.DestinationLongitude)
 	paymentGatewayRequest := &paymentGatewayPostPaymentRequest{
 		Amount: fare,
 	}
@@ -350,7 +350,7 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	defer processRideStatus(&ride, "COMPLETED")
+	defer processRideStatus(ride, "COMPLETED")
 
 	writeJSON(w, http.StatusOK, &appPostRideEvaluationResponse{
 		CompletedAt: ride.UpdatedAt.UnixMilli(),
@@ -466,9 +466,8 @@ func getAppNotification(user *User, ride *Ride, rideStatus string) (*appGetNotif
 
 func getChairStats(chairID string) appGetNotificationResponseChairStats {
 	stats := appGetNotificationResponseChairStats{}
-	statsCache, _ := getChairStatsCache(chairID)
-	stats.TotalRidesCount = statsCache.RideCount
-	if statsCache.RideCount > 0 {
+	if statsCache, ok := getChairStatsCache(chairID); ok {
+		stats.TotalRidesCount = statsCache.RideCount
 		stats.TotalEvaluationAvg = statsCache.TotalEvaluation / float64(statsCache.RideCount)
 	}
 	return stats
@@ -525,7 +524,7 @@ func appGetNearbyChairs(w http.ResponseWriter, r *http.Request) {
 	chairs := freeChairsCache.List()
 
 	for _, chair := range chairs {
-		chairLocation, ok := getLatestChairLocation(chair.ID)
+		chairLocation, ok := getLatestChairLocationCache(chair.ID)
 		if !ok {
 			continue
 		}

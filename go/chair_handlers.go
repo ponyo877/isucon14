@@ -41,7 +41,7 @@ func chairPostChairs(w http.ResponseWriter, r *http.Request) {
 	chairID := ulid.Make().String()
 	accessToken := secureRandomStr(32)
 	now := time.Now()
-	chair := Chair{
+	chair := &Chair{
 		ID:          chairID,
 		OwnerID:     owner.ID,
 		Name:        req.Name,
@@ -81,7 +81,7 @@ func chairPostActivity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.IsActive {
-		freeChairsCache.Add(*chair)
+		freeChairsCache.Add(chair)
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
@@ -160,14 +160,14 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 	}
 	id := ulid.Make().String()
 	now := time.Now()
-	chairLocation := ChairLocation{
+	chairLocation := &ChairLocation{
 		ID:        id,
 		ChairID:   chair.ID,
 		Latitude:  req.Latitude,
 		Longitude: req.Longitude,
 		CreatedAt: now,
 	}
-	before, ok := getLatestChairLocationChacke(chair.ID)
+	before, ok := getLatestChairLocationCache(chair.ID)
 	createChairLocation(chair.ID, chairLocation)
 	if ok {
 		distance := calculateDistance(before.Latitude, before.Longitude, req.Latitude, req.Longitude)
@@ -238,7 +238,7 @@ func chairGetNotification(w http.ResponseWriter, r *http.Request) {
 				go func() {
 					// evaluationの完了待ち
 					time.Sleep(50 * time.Millisecond)
-					freeChairsCache.Add(*chair)
+					freeChairsCache.Add(chair)
 					deleteLatestRideCache(chair.ID)
 				}()
 			}
@@ -317,7 +317,7 @@ func chairPostRideStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if targetStatus != "" {
-		processRideStatus(&ride, targetStatus)
+		processRideStatus(ride, targetStatus)
 	}
 
 	w.WriteHeader(http.StatusNoContent)
