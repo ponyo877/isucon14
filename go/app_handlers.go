@@ -397,16 +397,12 @@ func appGetNotification(w http.ResponseWriter, r *http.Request) {
 
 	clientGone := ctx.Done()
 	rc := http.NewResponseController(w)
-	appChan, ok := appNotifChan.Load(user.ID)
-	if !ok {
-		appNotifChan.Store(user.ID, make(chan Notif, 5))
-		appChan, _ = appNotifChan.Load(user.ID)
-	}
+	appChan := getAppChan(user.ID)
 	for {
 		select {
 		case <-clientGone:
 			return
-		case notif := <-appChan.(chan Notif):
+		case notif := <-appChan:
 			response, err := getAppNotification(user, notif.Ride, notif.RideStatus)
 			if err != nil {
 				return
@@ -428,7 +424,7 @@ func appGetNotification(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			if notif.RideStatus == "COMPLETED" {
-				latestRideCache.Delete(notif.Ride.ChairID.String)
+				deleteLatestRideCache(notif.Ride.ChairID.String)
 			}
 		}
 	}
@@ -533,7 +529,7 @@ func appGetNearbyChairs(w http.ResponseWriter, r *http.Request) {
 		if !ok {
 			continue
 		}
-		if _, ok := latestRideCache.Load(chair.ID); ok {
+		if _, ok := getLatestRide(chair.ID); ok {
 			continue
 		}
 		if calculateDistance(coordinate.Latitude, coordinate.Longitude, chairLocation.Latitude, chairLocation.Longitude) <= distance {

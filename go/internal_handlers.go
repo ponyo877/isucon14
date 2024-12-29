@@ -56,9 +56,10 @@ func internalGetMatching(w http.ResponseWriter, r *http.Request) {
 			cLoc, _ := getLatestChairLocation(c.ID)
 			distance := calculateDistance(cLoc.Latitude, cLoc.Longitude, r.PickupLatitude, r.PickupLongitude)
 			speed := 1
-			if s, ok := chairSpeedbyName.Load(c.Model); ok {
-				speed = s.(int)
+			if s, ok := getChairSpeedbyName(c.Model); ok {
+				speed = s
 			}
+			getChairSpeedbyName(c.Model)
 			time := distance / speed
 			mcf.AddEdge(i+1, len(chairs)+j+1, 1, time)
 		}
@@ -99,7 +100,7 @@ func internalGetMatching(w http.ResponseWriter, r *http.Request) {
 		ride := rides[e.To()-len(chairs)-1]
 
 		ride.ChairID = sql.NullString{String: chairID, Valid: true}
-		latestRideCache.Store(chairID, ride)
+		createLatestRide(chairID, &ride)
 		freeChairsCache.Remove(chairID)
 		waitingRidesCache.Remove(ride.ID)
 		createRideCache(ride.ID, ride)

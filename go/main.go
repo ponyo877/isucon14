@@ -184,7 +184,7 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, cm := range chairModels {
-		chairSpeedbyName.Store(cm.Name, cm.Speed)
+		createChairSpeedbyName(cm.Name, cm.Speed)
 	}
 
 	rideStatuses := []RideStatus{}
@@ -199,7 +199,7 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, rs := range rideStatuses {
-		latestRideStatusCache.Store(rs.RideID, rs.Status)
+		createLatestRideStatus(rs.RideID, rs.Status)
 	}
 	rides := []Ride{}
 	if err := db.SelectContext(ctx, &rides, `
@@ -213,7 +213,7 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, r := range rides {
-		latestRideCache.Store(r.ChairID, r)
+		createLatestRide(r.ChairID.String, &r)
 	}
 	rides = []Ride{}
 	if err := db.SelectContext(ctx, &rides, "SELECT * FROM rides ORDER BY updated_at"); err != nil {
@@ -221,15 +221,7 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, r := range rides {
-		chairSales := []ChairSale{}
-		if salesAny, ok := chairSaleCache.Load(r.ChairID.String); ok {
-			chairSales = salesAny.([]ChairSale)
-		}
-		chairSales = append(chairSales, ChairSale{
-			Sale:      calculateSale(r),
-			UpdatedAt: r.UpdatedAt,
-		})
-		chairSaleCache.Store(r.ChairID.String, chairSales)
+		createChairSaleCache(&r)
 	}
 	users := []User{}
 	if err := db.SelectContext(ctx, &users, "SELECT * FROM users"); err != nil {

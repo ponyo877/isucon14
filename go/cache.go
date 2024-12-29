@@ -102,12 +102,28 @@ func getLatestRideStatus(rideID string) (string, bool) {
 	return status.(string), ok
 }
 
-func createRideStatus(rideID string, status string) {
+func createLatestRideStatus(rideID string, status string) {
 	latestRideStatusCache.Store(rideID, status)
 }
 
+func getLatestRide(chairID string) (*Ride, bool) {
+	ride, ok := latestRideCache.Load(chairID)
+	if !ok {
+		return nil, false
+	}
+	return ride.(*Ride), ok
+}
+
+func createLatestRide(chairID string, ride *Ride) {
+	latestRideCache.Store(chairID, ride)
+}
+
+func deleteLatestRideCache(chairID string) {
+	latestRideCache.Delete(chairID)
+}
+
 func processRideStatus(ride *Ride, status string) {
-	createRideStatus(ride.ID, status)
+	createLatestRideStatus(ride.ID, status)
 	id := ulid.Make().String()
 	notif := Notif{
 		Ride:         ride,
@@ -124,29 +140,42 @@ func processRideStatus(ride *Ride, status string) {
 	}
 }
 
-func publishAppChan(userID string, notif Notif) {
+func getAppChan(userID string) chan Notif {
 	appChan, ok := appNotifChan.Load(userID)
 	if !ok {
 		appNotifChan.Store(userID, make(chan Notif, 5))
 		appChan, _ = appNotifChan.Load(userID)
 	}
-	appChan.(chan Notif) <- notif
+	return appChan.(chan Notif)
 }
 
-func publishChairChan(chairID string, notif Notif) {
+func getChairChan(chairID string) chan Notif {
 	chairChan, ok := chairNotifChan.Load(chairID)
 	if !ok {
 		chairNotifChan.Store(chairID, make(chan Notif, 5))
 		chairChan, _ = chairNotifChan.Load(chairID)
 	}
-	chairChan.(chan Notif) <- notif
+	return chairChan.(chan Notif)
+}
+
+func publishAppChan(userID string, notif Notif) {
+	getAppChan(userID) <- notif
+}
+
+func publishChairChan(chairID string, notif Notif) {
+	getChairChan(chairID) <- notif
+}
+
+func getChairSaleCache(chairID string) ([]ChairSale, bool) {
+	sales, ok := chairSaleCache.Load(chairID)
+	if !ok {
+		return []ChairSale{}, false
+	}
+	return sales.([]ChairSale), ok
 }
 
 func createChairSaleCache(ride *Ride) {
-	chairSales := []ChairSale{}
-	if salesAny, ok := chairSaleCache.Load(ride.ChairID.String); ok {
-		chairSales = salesAny.([]ChairSale)
-	}
+	chairSales, _ := getChairSaleCache(ride.ChairID.String)
 	chairSales = append(chairSales, ChairSale{
 		Sale:      calculateSale(*ride),
 		UpdatedAt: ride.UpdatedAt,
@@ -180,6 +209,17 @@ func createChairTotalDistanceCache(chairID string, distance int, now time.Time) 
 		TotalDistance: current.TotalDistance + distance,
 		UpdatedAt:     now,
 	})
+}
+func getChairSpeedbyName(model string) (int, bool) {
+	speed, ok := chairSpeedbyName.Load(model)
+	if !ok {
+		return 0, false
+	}
+	return speed.(int), ok
+}
+
+func createChairSpeedbyName(model string, speed int) {
+	chairSpeedbyName.Store(model, speed)
 }
 
 func getLatestChairLocation(chairID string) (ChairLocation, bool) {

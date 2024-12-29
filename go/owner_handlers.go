@@ -112,7 +112,7 @@ func ownerGetSales(w http.ResponseWriter, r *http.Request) {
 		if _, ok := modelSalesByModel[chair.Model]; !ok {
 			modelSalesByModel[chair.Model] = 0
 		}
-		salesAny, ok := chairSaleCache.Load(chair.ID)
+		sales, ok := getChairSaleCache(chair.ID)
 		if !ok {
 			res.Chairs = append(res.Chairs, chairSales{
 				ID:    chair.ID,
@@ -121,7 +121,6 @@ func ownerGetSales(w http.ResponseWriter, r *http.Request) {
 			})
 			continue
 		}
-		sales := salesAny.([]ChairSale)
 		sumSales := 0
 		for _, sale := range sales {
 			if sale.UpdatedAt.Before(since) || sale.UpdatedAt.After(until.Add(999*time.Microsecond)) {

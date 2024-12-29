@@ -82,10 +82,10 @@ func chairPostActivity(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.IsActive {
 		freeChairsCache.Add(*chair)
-	} else {
-		freeChairsCache.Remove(chair.ID)
+		w.WriteHeader(http.StatusNoContent)
+		return
 	}
-
+	freeChairsCache.Remove(chair.ID)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -145,10 +145,8 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 	chair := ctx.Value("chair").(*Chair)
 
 	ride := &Ride{}
-	rideAny, ok := latestRideCache.Load(chair.ID)
+	ride, ok := getLatestRide(chair.ID)
 	if ok {
-		rideIns := rideAny.(Ride)
-		ride = &rideIns
 		status, _ := getLatestRideStatus(ride.ID)
 		if status != "COMPLETED" && status != "CANCELED" {
 			if req.Latitude == ride.PickupLatitude && req.Longitude == ride.PickupLongitude && status == "ENROUTE" {
@@ -210,16 +208,12 @@ func chairGetNotification(w http.ResponseWriter, r *http.Request) {
 	clientGone := ctx.Done()
 	rc := http.NewResponseController(w)
 
-	chairChan, ok := chairNotifChan.Load(chair.ID)
-	if !ok {
-		chairNotifChan.Store(chair.ID, make(chan Notif, 5))
-		chairChan, _ = chairNotifChan.Load(chair.ID)
-	}
+	chairChan := getChairChan(chair.ID)
 	for {
 		select {
 		case <-clientGone:
 			return
-		case notif := <-chairChan.(chan Notif):
+		case notif := <-chairChan:
 			response, err := getChairNotification(notif.Ride, notif.RideStatus)
 			if err != nil {
 				return
@@ -245,7 +239,7 @@ func chairGetNotification(w http.ResponseWriter, r *http.Request) {
 					// evaluationの完了待ち
 					time.Sleep(50 * time.Millisecond)
 					freeChairsCache.Add(*chair)
-					latestRideCache.Delete(chair.ID)
+					deleteLatestRideCache(chair.ID)
 				}()
 			}
 		}
