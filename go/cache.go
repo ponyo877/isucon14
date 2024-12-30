@@ -35,67 +35,67 @@ type ChairSale struct {
 }
 
 var (
-	latestRideStatusCache        = sync.Map{}
-	latestRideCache              = sync.Map{}
-	latestChairLocation          = sync.Map{}
-	chairStatsCache              = sync.Map{}
-	chairTotalDistanceCache      = sync.Map{}
-	chairSpeedbyName             = sync.Map{}
-	appNotifChan                 = sync.Map{}
-	chairNotifChan               = sync.Map{}
-	chairSaleCache               = sync.Map{}
-	chairAccessTokenCache        = sync.Map{}
-	appAccessTokenCache          = sync.Map{}
-	ownerAccessTokenCache        = sync.Map{}
-	ownerCache                   = sync.Map{}
-	ownerChairRegisterTokenCache = sync.Map{}
-	chairsOwnerIDCache           = sync.Map{}
-	chairCache                   = sync.Map{}
-	invCouponCountCache          = sync.Map{}
-	unusedCouponsCache           = sync.Map{}
-	rideDiscountCache            = sync.Map{}
-	userCache                    = sync.Map{}
-	userInvCache                 = sync.Map{}
-	rideCache                    = sync.Map{}
-	paymentTokenCache            = sync.Map{}
-	userRideStatusCache          = sync.Map{}
-	rideIDsUserIDCache           = sync.Map{}
-	freeChairsCache              = NewFreeChairs()
-	waitingRidesCache            = NewWaitingRides()
+	latestRideStatus        = sync.Map{}
+	latestRide              = sync.Map{}
+	latestChairLocation     = sync.Map{}
+	chairStats              = sync.Map{}
+	chairTotalDistance      = sync.Map{}
+	chairSpeedbyName        = sync.Map{}
+	appNotifChan            = sync.Map{}
+	chairNotifChan          = sync.Map{}
+	chairSale               = sync.Map{}
+	chairAccessToken        = sync.Map{}
+	appAccessToken          = sync.Map{}
+	ownerAccessToken        = sync.Map{}
+	ownerCache              = sync.Map{}
+	ownerChairRegisterToken = sync.Map{}
+	chairsOwnerID           = sync.Map{}
+	chairCache              = sync.Map{}
+	invCouponCount          = sync.Map{}
+	unusedCoupons           = sync.Map{}
+	rideDiscount            = sync.Map{}
+	userCache               = sync.Map{}
+	userInv                 = sync.Map{}
+	rideCache               = sync.Map{}
+	paymentToken            = sync.Map{}
+	userRideStatus          = sync.Map{}
+	rideIDsUserID           = sync.Map{}
+	freeChairs              = NewFreeChairs()
+	waitingRides            = NewWaitingRides()
 )
 
 func initCache() {
-	latestRideStatusCache = sync.Map{}
-	latestRideCache = sync.Map{}
+	latestRideStatus = sync.Map{}
+	latestRide = sync.Map{}
 	latestChairLocation = sync.Map{}
-	chairStatsCache = sync.Map{}
-	chairTotalDistanceCache = sync.Map{}
+	chairStats = sync.Map{}
+	chairTotalDistance = sync.Map{}
 	chairSpeedbyName = sync.Map{}
 	appNotifChan = sync.Map{}
 	chairNotifChan = sync.Map{}
-	chairSaleCache = sync.Map{}
-	chairAccessTokenCache = sync.Map{}
-	appAccessTokenCache = sync.Map{}
-	ownerAccessTokenCache = sync.Map{}
+	chairSale = sync.Map{}
+	chairAccessToken = sync.Map{}
+	appAccessToken = sync.Map{}
+	ownerAccessToken = sync.Map{}
 	ownerCache = sync.Map{}
-	ownerChairRegisterTokenCache = sync.Map{}
-	chairsOwnerIDCache = sync.Map{}
+	ownerChairRegisterToken = sync.Map{}
+	chairsOwnerID = sync.Map{}
 	chairCache = sync.Map{}
-	invCouponCountCache = sync.Map{}
-	unusedCouponsCache = sync.Map{}
-	rideDiscountCache = sync.Map{}
+	invCouponCount = sync.Map{}
+	unusedCoupons = sync.Map{}
+	rideDiscount = sync.Map{}
 	userCache = sync.Map{}
-	userInvCache = sync.Map{}
+	userInv = sync.Map{}
 	rideCache = sync.Map{}
-	paymentTokenCache = sync.Map{}
-	userRideStatusCache = sync.Map{}
-	rideIDsUserIDCache = sync.Map{}
-	freeChairsCache = NewFreeChairs()
-	waitingRidesCache = NewWaitingRides()
+	paymentToken = sync.Map{}
+	userRideStatus = sync.Map{}
+	rideIDsUserID = sync.Map{}
+	freeChairs = NewFreeChairs()
+	waitingRides = NewWaitingRides()
 }
 
 func getLatestRideStatus(rideID string) (string, bool) {
-	status, ok := latestRideStatusCache.Load(rideID)
+	status, ok := latestRideStatus.Load(rideID)
 	if !ok {
 		return "", false
 	}
@@ -103,11 +103,11 @@ func getLatestRideStatus(rideID string) (string, bool) {
 }
 
 func createLatestRideStatus(rideID string, status string) {
-	latestRideStatusCache.Store(rideID, status)
+	latestRideStatus.Store(rideID, status)
 }
 
 func getLatestRide(chairID string) (*Ride, bool) {
-	ride, ok := latestRideCache.Load(chairID)
+	ride, ok := latestRide.Load(chairID)
 	if !ok {
 		return nil, false
 	}
@@ -115,11 +115,11 @@ func getLatestRide(chairID string) (*Ride, bool) {
 }
 
 func createLatestRide(chairID string, ride *Ride) {
-	latestRideCache.Store(chairID, ride)
+	latestRide.Store(chairID, ride)
 }
 
-func deleteLatestRideCache(chairID string) {
-	latestRideCache.Delete(chairID)
+func deleteLatestRide(chairID string) {
+	latestRide.Delete(chairID)
 }
 
 func processRideStatus(ride *Ride, status string) {
@@ -135,8 +135,8 @@ func processRideStatus(ride *Ride, status string) {
 		publishChairChan(ride.ChairID.String, notif)
 	}
 	if status == "COMPLETED" {
-		createChairSaleCache(ride)
-		createUserRideStatusCache(ride.UserID, true)
+		createChairSale(ride)
+		createUserRideStatus(ride.UserID, true)
 	}
 }
 
@@ -166,28 +166,28 @@ func publishChairChan(chairID string, notif *Notif) {
 	getChairChan(chairID) <- notif
 }
 
-func getChairSaleCache(chairID string) ([]*ChairSale, bool) {
-	sales, ok := chairSaleCache.Load(chairID)
+func getChairSale(chairID string) ([]*ChairSale, bool) {
+	sales, ok := chairSale.Load(chairID)
 	if !ok {
 		return []*ChairSale{}, false
 	}
 	return sales.([]*ChairSale), ok
 }
 
-func createChairSaleCache(ride *Ride) {
-	chairSales, _ := getChairSaleCache(ride.ChairID.String)
+func createChairSale(ride *Ride) {
+	chairSales, _ := getChairSale(ride.ChairID.String)
 	chairSales = append(chairSales, &ChairSale{
 		Sale:      calculateSale(*ride),
 		UpdatedAt: ride.UpdatedAt,
 	})
-	chairSaleCache.Store(ride.ChairID.String, chairSales)
+	chairSale.Store(ride.ChairID.String, chairSales)
 }
 
 func createChairLocation(chairID string, chairLocation *ChairLocation) {
 	latestChairLocation.Store(chairID, chairLocation)
 }
 
-func getLatestChairLocationCache(chairID string) (*ChairLocation, bool) {
+func getLatestChairLocation(chairID string) (*ChairLocation, bool) {
 	latest, ok := latestChairLocation.Load(chairID)
 	if !ok {
 		return nil, false
@@ -195,20 +195,20 @@ func getLatestChairLocationCache(chairID string) (*ChairLocation, bool) {
 	return latest.(*ChairLocation), ok
 }
 
-func getChairTotalDistanceCache(chairID string) (*TotalDistance, bool) {
-	totalDistance, ok := chairTotalDistanceCache.Load(chairID)
+func getChairTotalDistance(chairID string) (*TotalDistance, bool) {
+	totalDistance, ok := chairTotalDistance.Load(chairID)
 	if !ok {
 		return nil, false
 	}
 	return totalDistance.(*TotalDistance), ok
 }
 
-func createChairTotalDistanceCache(chairID string, distance int, now time.Time) {
+func createChairTotalDistance(chairID string, distance int, now time.Time) {
 	current := &TotalDistance{}
-	if tmp, ok := getChairTotalDistanceCache(chairID); ok {
+	if tmp, ok := getChairTotalDistance(chairID); ok {
 		current = tmp
 	}
-	chairTotalDistanceCache.Store(chairID, &TotalDistance{
+	chairTotalDistance.Store(chairID, &TotalDistance{
 		TotalDistance: current.TotalDistance + distance,
 		UpdatedAt:     now,
 	})
@@ -226,17 +226,17 @@ func createChairSpeedbyName(model string, speed int) {
 }
 
 func getChairStatsCache(chairID string) (*ChairStats, bool) {
-	stats, ok := chairStatsCache.Load(chairID)
+	stats, ok := chairStats.Load(chairID)
 	if !ok {
 		return nil, false
 	}
 	return stats.(*ChairStats), ok
 }
 
-func addChairStatsCache(chairID string, evaluation int) {
+func addChairStats(chairID string, evaluation int) {
 	stats, ok := getChairStatsCache(chairID)
 	if !ok {
-		chairStatsCache.Store(chairID, &ChairStats{
+		chairStats.Store(chairID, &ChairStats{
 			RideCount:       1,
 			TotalEvaluation: float64(evaluation),
 		})
@@ -244,34 +244,34 @@ func addChairStatsCache(chairID string, evaluation int) {
 	}
 	stats.RideCount++
 	stats.TotalEvaluation += float64(evaluation)
-	chairStatsCache.Store(chairID, stats)
+	chairStats.Store(chairID, stats)
 }
 
 func getChairAccessToken(token string) (*Chair, bool) {
-	chair, ok := chairAccessTokenCache.Load(token)
+	chair, ok := chairAccessToken.Load(token)
 	return chair.(*Chair), ok
 }
 
 func createChairAccessToken(token string, chair *Chair) {
-	chairAccessTokenCache.Store(token, chair)
+	chairAccessToken.Store(token, chair)
 }
 
 func getAppAccessToken(token string) (*User, bool) {
-	user, ok := appAccessTokenCache.Load(token)
+	user, ok := appAccessToken.Load(token)
 	return user.(*User), ok
 }
 
 func createAppAccessToken(token string, user *User) {
-	appAccessTokenCache.Store(token, user)
+	appAccessToken.Store(token, user)
 }
 
 func getOwnerAccessToken(token string) (*Owner, bool) {
-	owner, ok := ownerAccessTokenCache.Load(token)
+	owner, ok := ownerAccessToken.Load(token)
 	return owner.(*Owner), ok
 }
 
 func createOwnerAccessToken(token string, owner *Owner) {
-	ownerAccessTokenCache.Store(token, owner)
+	ownerAccessToken.Store(token, owner)
 }
 
 type FreeChairs struct {
@@ -321,65 +321,65 @@ func (f *FreeChairs) Remove(chairID string) {
 	delete(f.cache, chairID)
 }
 
-func getOwnerCache(ownerID string) (*Owner, bool) {
+func getOwner(ownerID string) (*Owner, bool) {
 	owner, ok := ownerCache.Load(ownerID)
 	return owner.(*Owner), ok
 }
 
-func createOwnerCache(ownerID string, owner *Owner) {
+func createOwner(ownerID string, owner *Owner) {
 	ownerCache.Store(ownerID, owner)
 }
 
-func getOwnerChairRegisterTokenCache(chairRegisterToken string) (*Owner, bool) {
-	owner, ok := ownerChairRegisterTokenCache.Load(chairRegisterToken)
+func getOwnerChairRegisterToken(chairRegisterToken string) (*Owner, bool) {
+	owner, ok := ownerChairRegisterToken.Load(chairRegisterToken)
 	return owner.(*Owner), ok
 }
 
-func createOwnerChairRegisterTokenCache(chairRegisterToken string, owner *Owner) {
-	ownerChairRegisterTokenCache.Store(chairRegisterToken, owner)
+func createOwnerChairRegisterToken(chairRegisterToken string, owner *Owner) {
+	ownerChairRegisterToken.Store(chairRegisterToken, owner)
 }
 
-func getChairsOwnerIDCache(ownerID string) ([]*Chair, bool) {
-	chairs, ok := chairsOwnerIDCache.Load(ownerID)
+func getChairsOwnerID(ownerID string) ([]*Chair, bool) {
+	chairs, ok := chairsOwnerID.Load(ownerID)
 	if !ok {
 		return []*Chair{}, false
 	}
 	return chairs.([]*Chair), ok
 }
 
-func createChairsOwnerIDCache(ownerID string, chair *Chair) {
+func createChairsOwnerID(ownerID string, chair *Chair) {
 	chairs := []*Chair{}
-	tmp, ok := getChairsOwnerIDCache(ownerID)
+	tmp, ok := getChairsOwnerID(ownerID)
 	if ok {
 		chairs = tmp
 	}
 	chairs = append(chairs, chair)
-	chairsOwnerIDCache.Store(ownerID, chairs)
+	chairsOwnerID.Store(ownerID, chairs)
 }
 
-func getChairCache(chairID string) (*Chair, bool) {
+func getChair(chairID string) (*Chair, bool) {
 	chair, ok := chairCache.Load(chairID)
 	return chair.(*Chair), ok
 }
 
-func createChairCache(chairID string, chair *Chair) {
+func createChair(chairID string, chair *Chair) {
 	chairCache.Store(chairID, chair)
 }
 
-func getInvCouponCountCache(code string) (int, bool) {
-	count, ok := invCouponCountCache.Load(code)
+func getInvCouponCount(code string) (int, bool) {
+	count, ok := invCouponCount.Load(code)
 	if !ok {
 		return 0, false
 	}
 	return count.(int), ok
 }
 
-func incInvCouponCountCache(code string) {
+func incInvCouponCount(code string) {
 	count := 0
-	if current, ok := getInvCouponCountCache(code); ok {
+	if current, ok := getInvCouponCount(code); ok {
 		count = current
 	}
-	invCouponCountCache.Store(code, count+1)
+	invCouponCount.Store(code, count+1)
 }
 
 type UnusedCouponAmount struct {
@@ -420,16 +420,16 @@ func (u *UnusedCouponAmount) Remove() int {
 
 func addUnusedCoupon(userID string, amount int) {
 	unusedCouponAmount := NewUnusedCouponAmount()
-	if tmp, ok := unusedCouponsCache.Load(userID); ok {
+	if tmp, ok := unusedCoupons.Load(userID); ok {
 		unusedCouponAmount = tmp.(*UnusedCouponAmount)
 	}
 	unusedCouponAmount.Add(amount)
-	unusedCouponsCache.Store(userID, unusedCouponAmount)
+	unusedCoupons.Store(userID, unusedCouponAmount)
 }
 
 func getUnusedCoupon(userID string) (int, bool) {
 	unusedCouponAmount := NewUnusedCouponAmount()
-	tmp, ok := unusedCouponsCache.Load(userID)
+	tmp, ok := unusedCoupons.Load(userID)
 	if !ok {
 		return 0, false
 	}
@@ -442,25 +442,25 @@ func getUnusedCoupon(userID string) (int, bool) {
 
 func useUnusedCoupon(userID string) int {
 	unusedCouponAmount := NewUnusedCouponAmount()
-	if tmp, ok := unusedCouponsCache.Load(userID); ok {
+	if tmp, ok := unusedCoupons.Load(userID); ok {
 		unusedCouponAmount = tmp.(*UnusedCouponAmount)
 	}
 	return unusedCouponAmount.Remove()
 }
 
-func getRideDiscountCache(rideID string) (int, bool) {
-	discount, ok := rideDiscountCache.Load(rideID)
+func getRideDiscount(rideID string) (int, bool) {
+	discount, ok := rideDiscount.Load(rideID)
 	if !ok {
 		return 0, false
 	}
 	return discount.(int), ok
 }
 
-func createRideDiscountCache(rideID string, discount int) {
-	rideDiscountCache.Store(rideID, discount)
+func createRideDiscount(rideID string, discount int) {
+	rideDiscount.Store(rideID, discount)
 }
 
-func getUserCache(userID string) (*User, bool) {
+func getUser(userID string) (*User, bool) {
 	user, ok := userCache.Load(userID)
 	if !ok {
 		return nil, false
@@ -468,23 +468,23 @@ func getUserCache(userID string) (*User, bool) {
 	return user.(*User), ok
 }
 
-func createUserCache(userID string, user *User) {
+func createUser(userID string, user *User) {
 	userCache.Store(userID, user)
 }
 
-func getUserInvCache(code string) (*User, bool) {
-	user, ok := userInvCache.Load(code)
+func getUserInv(code string) (*User, bool) {
+	user, ok := userInv.Load(code)
 	if !ok {
 		return nil, false
 	}
 	return user.(*User), ok
 }
 
-func createUserInvCache(code string, user *User) {
-	userInvCache.Store(code, user)
+func createUserInv(code string, user *User) {
+	userInv.Store(code, user)
 }
 
-func getRideCache(rideID string) (*Ride, bool) {
+func getRide(rideID string) (*Ride, bool) {
 	ride, ok := rideCache.Load(rideID)
 	if !ok {
 		return nil, false
@@ -492,50 +492,50 @@ func getRideCache(rideID string) (*Ride, bool) {
 	return ride.(*Ride), ok
 }
 
-func createRideCache(rideID string, ride *Ride) {
+func createRide(rideID string, ride *Ride) {
 	rideCache.Store(rideID, ride)
 }
 
-func getPaymentTokenCache(userID string) (string, bool) {
-	token, ok := paymentTokenCache.Load(userID)
+func getPaymentToken(userID string) (string, bool) {
+	token, ok := paymentToken.Load(userID)
 	if !ok {
 		return "", false
 	}
 	return token.(string), ok
 }
 
-func createPaymentTokenCache(userID string, token string) {
-	paymentTokenCache.Store(userID, token)
+func createPaymentToken(userID string, token string) {
+	paymentToken.Store(userID, token)
 }
 
-func getUserRideStatusCache(userID string) (bool, bool) {
-	isFree, ok := userRideStatusCache.Load(userID)
+func getUserRideStatus(userID string) (bool, bool) {
+	isFree, ok := userRideStatus.Load(userID)
 	if !ok {
 		return false, false
 	}
 	return isFree.(bool), ok
 }
 
-func createUserRideStatusCache(userID string, isFree bool) {
-	userRideStatusCache.Store(userID, isFree)
+func createUserRideStatus(userID string, isFree bool) {
+	userRideStatus.Store(userID, isFree)
 }
 
-func listRideIDsUserIDCache(userID string) ([]string, bool) {
-	rideIDs, ok := rideIDsUserIDCache.Load(userID)
+func listRideIDsUserID(userID string) ([]string, bool) {
+	rideIDs, ok := rideIDsUserID.Load(userID)
 	if !ok {
 		return []string{}, false
 	}
 	return rideIDs.([]string), ok
 }
 
-func addRideIDsUserIDCache(userID string, rideID string) {
+func addRideIDsUserID(userID string, rideID string) {
 	rideIDs := []string{}
-	tmp, ok := listRideIDsUserIDCache(userID)
+	tmp, ok := listRideIDsUserID(userID)
 	if ok {
 		rideIDs = tmp
 	}
 	rideIDs = append(rideIDs, rideID)
-	rideIDsUserIDCache.Store(userID, rideIDs)
+	rideIDsUserID.Store(userID, rideIDs)
 }
 
 type WaitingRides struct {

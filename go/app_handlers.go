@@ -51,9 +51,9 @@ func appPostUsers(w http.ResponseWriter, r *http.Request) {
 		CreatedAt:      now,
 		UpdatedAt:      now,
 	}
-	createUserCache(userID, user)
-	createUserInvCache(invitationCode, user)
-	createUserRideStatusCache(userID, true)
+	createUser(userID, user)
+	createUserInv(invitationCode, user)
+	createUserRideStatus(userID, true)
 
 	// 初回登録キャンペーンのクーポンを付与
 	addUnusedCoupon(userID, 3000)
@@ -61,21 +61,21 @@ func appPostUsers(w http.ResponseWriter, r *http.Request) {
 	// 招待コードを使った登録
 	if req.InvitationCode != nil && *req.InvitationCode != "" {
 		// 招待する側の招待数をチェック
-		count, _ := getInvCouponCountCache(*req.InvitationCode)
+		count, _ := getInvCouponCount(*req.InvitationCode)
 		if count >= 3 {
 			writeError(w, http.StatusInternalServerError, errors.New("この招待コードは使用できません。"))
 			return
 		}
 
 		// ユーザーチェック
-		inviter, ok := getUserInvCache(*req.InvitationCode)
+		inviter, ok := getUserInv(*req.InvitationCode)
 		if !ok {
 			writeError(w, http.StatusInternalServerError, errors.New("この招待コードは使用できません。"))
 			return
 		}
 
 		// 招待クーポン付与
-		incInvCouponCountCache(*req.InvitationCode)
+		incInvCouponCount(*req.InvitationCode)
 		addUnusedCoupon(userID, 1500)
 		// 招待した人にもRewardを付与
 		addUnusedCoupon(inviter.ID, 1000)
@@ -111,7 +111,7 @@ func appPostPaymentMethods(w http.ResponseWriter, r *http.Request) {
 
 	user := ctx.Value("user").(*User)
 
-	createPaymentTokenCache(user.ID, req.Token)
+	createPaymentToken(user.ID, req.Token)
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -142,7 +142,7 @@ func appGetRides(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	user := ctx.Value("user").(*User)
 
-	rideIDs, _ := listRideIDsUserIDCache(user.ID)
+	rideIDs, _ := listRideIDsUserID(user.ID)
 
 	items := []getAppRidesResponseItem{}
 	for _, rideID := range rideIDs {
@@ -150,7 +150,7 @@ func appGetRides(w http.ResponseWriter, r *http.Request) {
 		if status != "COMPLETED" {
 			continue
 		}
-		ride, _ := getRideCache(rideID)
+		ride, _ := getRide(rideID)
 		fare := calculateDiscountedFare(user.ID, ride, ride.PickupLatitude, ride.PickupLongitude, ride.DestinationLatitude, ride.DestinationLongitude)
 
 		item := getAppRidesResponseItem{
@@ -165,12 +165,12 @@ func appGetRides(w http.ResponseWriter, r *http.Request) {
 
 		item.Chair = getAppRidesResponseItemChair{}
 
-		chair, _ := getChairCache(ride.ChairID.String)
+		chair, _ := getChair(ride.ChairID.String)
 		item.Chair.ID = chair.ID
 		item.Chair.Name = chair.Name
 		item.Chair.Model = chair.Model
 
-		owner, _ := getOwnerCache(chair.OwnerID)
+		owner, _ := getOwner(chair.OwnerID)
 		item.Chair.Owner = owner.Name
 
 		items = append(items, item)
@@ -211,7 +211,7 @@ func appPostRides(w http.ResponseWriter, r *http.Request) {
 	user := ctx.Value("user").(*User)
 	rideID := ulid.Make().String()
 
-	isFree, _ := getUserRideStatusCache(user.ID)
+	isFree, _ := getUserRideStatus(user.ID)
 	if !isFree {
 		writeError(w, http.StatusConflict, errors.New("ride already exists"))
 		return
@@ -227,14 +227,14 @@ func appPostRides(w http.ResponseWriter, r *http.Request) {
 		CreatedAt:            now,
 		UpdatedAt:            now,
 	}
-	createRideCache(rideID, ride)
-	addRideIDsUserIDCache(user.ID, ride.ID)
-	waitingRidesCache.Add(ride)
+	createRide(rideID, ride)
+	addRideIDsUserID(user.ID, ride.ID)
+	waitingRides.Add(ride)
 
 	// 初回利用クーポンは初回に必ず使われるしこれだけでok
 	if amount, ok := getUnusedCoupon(user.ID); ok {
 		useUnusedCoupon(user.ID)
-		createRideDiscountCache(rideID, amount)
+		createRideDiscount(rideID, amount)
 	}
 
 	fare := calculateDiscountedFare(user.ID, ride, req.PickupCoordinate.Latitude, req.PickupCoordinate.Longitude, req.DestinationCoordinate.Latitude, req.DestinationCoordinate.Longitude)
@@ -312,7 +312,7 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ride, ok := getRideCache(rideID)
+	ride, ok := getRide(rideID)
 	if !ok {
 		writeError(w, http.StatusNotFound, errors.New("ride not found"))
 		return
@@ -324,13 +324,13 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if ride.ChairID.Valid {
-		addChairStatsCache(ride.ChairID.String, req.Evaluation)
+		addChairStats(ride.ChairID.String, req.Evaluation)
 	}
 	ride.Evaluation = &req.Evaluation
 	ride.UpdatedAt = time.Now()
-	createRideCache(rideID, ride)
+	createRide(rideID, ride)
 
-	token, ok := getPaymentTokenCache(ride.UserID)
+	token, ok := getPaymentToken(ride.UserID)
 	if !ok {
 		writeError(w, http.StatusBadRequest, errors.New("payment token not registered"))
 		return
@@ -424,7 +424,7 @@ func appGetNotification(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			if notif.RideStatus == "COMPLETED" {
-				deleteLatestRideCache(notif.Ride.ChairID.String)
+				deleteLatestRide(notif.Ride.ChairID.String)
 			}
 		}
 	}
@@ -451,7 +451,7 @@ func getAppNotification(user *User, ride *Ride, rideStatus string) (*appGetNotif
 	}
 
 	if ride.ChairID.Valid {
-		chair, _ := getChairCache(ride.ChairID.String)
+		chair, _ := getChair(ride.ChairID.String)
 		stats := getChairStats(chair.ID)
 		response.Data.Chair = &appGetNotificationResponseChair{
 			ID:    chair.ID,
@@ -518,13 +518,13 @@ func appGetNearbyChairs(w http.ResponseWriter, r *http.Request) {
 	coordinate := Coordinate{Latitude: lat, Longitude: lon}
 	nearbyChairs := []appGetNearbyChairsResponseChair{}
 
-	freeChairsCache.Lock()
+	freeChairs.Lock()
 	retrievedAt := time.Now()
-	defer freeChairsCache.Unlock()
-	chairs := freeChairsCache.List()
+	defer freeChairs.Unlock()
+	chairs := freeChairs.List()
 
 	for _, chair := range chairs {
-		chairLocation, ok := getLatestChairLocationCache(chair.ID)
+		chairLocation, ok := getLatestChairLocation(chair.ID)
 		if !ok {
 			continue
 		}
@@ -564,7 +564,7 @@ func calculateDiscountedFare(userID string, ride *Ride, pickupLatitude, pickupLo
 		pickupLongitude = ride.PickupLongitude
 
 		// すでにクーポンが紐づいているならそれの割引額を参照
-		if amount, ok := getRideDiscountCache(ride.ID); ok {
+		if amount, ok := getRideDiscount(ride.ID); ok {
 			discount = amount
 		}
 	} else {

@@ -48,8 +48,8 @@ func ownerPostOwners(w http.ResponseWriter, r *http.Request) {
 		UpdatedAt:          now,
 	}
 	createOwnerAccessToken(accessToken, owner)
-	createOwnerCache(ownerID, owner)
-	createOwnerChairRegisterTokenCache(chairRegisterToken, owner)
+	createOwner(ownerID, owner)
+	createOwnerChairRegisterToken(chairRegisterToken, owner)
 
 	http.SetCookie(w, &http.Cookie{
 		Path:  "/",
@@ -102,7 +102,7 @@ func ownerGetSales(w http.ResponseWriter, r *http.Request) {
 
 	owner := r.Context().Value("owner").(*Owner)
 
-	chairs, _ := getChairsOwnerIDCache(owner.ID)
+	chairs, _ := getChairsOwnerID(owner.ID)
 	res := ownerGetSalesResponse{
 		TotalSales: 0,
 	}
@@ -112,7 +112,7 @@ func ownerGetSales(w http.ResponseWriter, r *http.Request) {
 		if _, ok := modelSalesByModel[chair.Model]; !ok {
 			modelSalesByModel[chair.Model] = 0
 		}
-		sales, ok := getChairSaleCache(chair.ID)
+		sales, ok := getChairSale(chair.ID)
 		if !ok {
 			res.Chairs = append(res.Chairs, chairSales{
 				ID:    chair.ID,
@@ -191,10 +191,10 @@ func ownerGetChairs(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	owner := ctx.Value("owner").(*Owner)
 
-	chairs, _ := getChairsOwnerIDCache(owner.ID)
+	chairs, _ := getChairsOwnerID(owner.ID)
 	res := ownerGetChairResponse{}
 	for _, chair := range chairs {
-		current, ok := getChairTotalDistanceCache(chair.ID)
+		current, ok := getChairTotalDistance(chair.ID)
 		c := ownerGetChairResponseChair{
 			ID:           chair.ID,
 			Name:         chair.Name,

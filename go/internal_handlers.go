@@ -16,14 +16,14 @@ var mu sync.Mutex
 var isProcessing bool
 
 func internalGetMatching(w http.ResponseWriter, r *http.Request) {
-	freeChairsCache.Lock()
-	chairs := freeChairsCache.List()
-	freeChairsCache.Unlock()
+	freeChairs.Lock()
+	chairs := freeChairs.List()
+	freeChairs.Unlock()
 	if len(chairs) < 5 {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	rides := waitingRidesCache.List()
+	rides := waitingRides.List()
 	if len(rides) == 0 {
 		w.WriteHeader(http.StatusNoContent)
 		return
@@ -53,7 +53,7 @@ func internalGetMatching(w http.ResponseWriter, r *http.Request) {
 	// chair -> ride
 	for i, c := range chairs {
 		for j, r := range rides {
-			cLoc, _ := getLatestChairLocationCache(c.ID)
+			cLoc, _ := getLatestChairLocation(c.ID)
 			distance := calculateDistance(cLoc.Latitude, cLoc.Longitude, r.PickupLatitude, r.PickupLongitude)
 			speed := 1
 			if s, ok := getChairSpeedbyName(c.Model); ok {
@@ -101,10 +101,10 @@ func internalGetMatching(w http.ResponseWriter, r *http.Request) {
 
 		ride.ChairID = sql.NullString{String: chairID, Valid: true}
 		createLatestRide(chairID, ride)
-		freeChairsCache.Remove(chairID)
-		waitingRidesCache.Remove(ride.ID)
-		createRideCache(ride.ID, ride)
-		createUserRideStatusCache(ride.UserID, false)
+		freeChairs.Remove(chairID)
+		waitingRides.Remove(ride.ID)
+		createRide(ride.ID, ride)
+		createUserRideStatus(ride.UserID, false)
 		notif := &Notif{
 			Ride:       ride,
 			RideStatus: "MATCHING",

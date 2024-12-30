@@ -32,7 +32,7 @@ func chairPostChairs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	owner, ok := getOwnerChairRegisterTokenCache(req.ChairRegisterToken)
+	owner, ok := getOwnerChairRegisterToken(req.ChairRegisterToken)
 	if !ok {
 		writeError(w, http.StatusUnauthorized, errors.New("invalid chair_register_token"))
 		return
@@ -51,9 +51,9 @@ func chairPostChairs(w http.ResponseWriter, r *http.Request) {
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
-	createChairCache(chairID, chair)
+	createChair(chairID, chair)
 	createChairAccessToken(accessToken, chair)
-	createChairsOwnerIDCache(owner.ID, chair)
+	createChairsOwnerID(owner.ID, chair)
 
 	http.SetCookie(w, &http.Cookie{
 		Path:  "/",
@@ -81,11 +81,11 @@ func chairPostActivity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.IsActive {
-		freeChairsCache.Add(chair)
+		freeChairs.Add(chair)
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	freeChairsCache.Remove(chair.ID)
+	freeChairs.Remove(chair.ID)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -167,11 +167,11 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 		Longitude: req.Longitude,
 		CreatedAt: now,
 	}
-	before, ok := getLatestChairLocationCache(chair.ID)
+	before, ok := getLatestChairLocation(chair.ID)
 	createChairLocation(chair.ID, chairLocation)
 	if ok {
 		distance := calculateDistance(before.Latitude, before.Longitude, req.Latitude, req.Longitude)
-		createChairTotalDistanceCache(chair.ID, distance, now)
+		createChairTotalDistance(chair.ID, distance, now)
 	}
 
 	chairPostCoordinateWriteJSON(w, now)
@@ -238,8 +238,8 @@ func chairGetNotification(w http.ResponseWriter, r *http.Request) {
 				go func() {
 					// evaluationの完了待ち
 					time.Sleep(50 * time.Millisecond)
-					freeChairsCache.Add(chair)
-					deleteLatestRideCache(chair.ID)
+					freeChairs.Add(chair)
+					deleteLatestRide(chair.ID)
 				}()
 			}
 		}
@@ -247,7 +247,7 @@ func chairGetNotification(w http.ResponseWriter, r *http.Request) {
 }
 
 func getChairNotification(ride *Ride, rideStatus string) (*chairGetNotificationResponse, error) {
-	user, ok := getUserCache(ride.UserID)
+	user, ok := getUser(ride.UserID)
 	if !ok {
 		return nil, errors.New("user not found")
 	}
@@ -288,7 +288,7 @@ func chairPostRideStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ride, ok := getRideCache(rideID)
+	ride, ok := getRide(rideID)
 	if !ok {
 		writeError(w, http.StatusNotFound, errors.New("ride not found"))
 		return
