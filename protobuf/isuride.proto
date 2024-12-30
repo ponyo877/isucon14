@@ -5,96 +5,92 @@ option go_package = "pkg/grpc";
 package isuride;
 
 service SubService {
-	rpc AppNotification (AppNotificationRequest) returns (AppNotificationResponse); 
-	rpc ChairNotification (ChairNotificationRequest) returns (ChairNotificationResponse); 
-	rpc MinCostFlow (MinCostFlowRequest) returns (MinCostFlowResponse);
-	rpc StoreUserToken (StoreUserTokenRequest) returns (StoreUserTokenResponse);
-	rpc StoreChairToken (StoreChairTokenRequest) returns (StoreChairTokenResponse);
+  rpc AppNotification(AppNotificationRequest) returns (AppNotificationResponse);
+  rpc ChairNotification(ChairNotificationRequest) returns (ChairNotificationResponse);
+  rpc MinCostFlow(MinCostFlowRequest) returns (MinCostFlowResponse);
+  rpc StoreUserToken(StoreUserTokenRequest) returns (StoreUserTokenResponse);
+  rpc StoreChairToken(StoreChairTokenRequest) returns (StoreChairTokenResponse);
 }
 
 message AppNotificationRequest {
-	string rideID = 1;
-	Coordinate pickupCoordinate = 2;
-	Coordinate destinationCoordinate = 3;
-	int32 fare = 4;
-	string status = 5;
-	Chair chair = 6;
-	int64 createdAt = 7;
-	int64 updateAt = 8;
+  string rideID = 1;
+  Coordinate pickupCoordinate = 2;
+  Coordinate destinationCoordinate = 3;
+  int32 fare = 4;
+  string status = 5;
+  Chair chair = 6;
+  int64 createdAt = 7;
+  int64 updateAt = 8;
 }
 
 message AppNotificationResponse {}
 
 message ChairNotificationRequest {
-	string rideID = 1;
-	User user = 2;
-	Coordinate pickupCoordinate = 3;
-	Coordinate destinationCoordinate = 4;
-	string status = 5;
+  string rideID = 1;
+  User user = 2;
+  Coordinate pickupCoordinate = 3;
+  Coordinate destinationCoordinate = 4;
+  string status = 5;
 }
 
 message ChairNotificationResponse {}
 
 message MinCostFlowRequest {
-	repeated MatchableChair chairs = 1;
-	repeated MatchableRide rides = 2;
+  repeated MatchableChair chairs = 1;
+  repeated MatchableRide rides = 2;
 }
 
-message MinCostFlowResponse {
-	repeated RideChair rideChairs = 1;
-}
+message MinCostFlowResponse { repeated RideChair rideChairs = 1; }
 
 message StoreUserTokenRequest {
-	string userID = 1;
-	string token = 2;
+  string userID = 1;
+  string token = 2;
 }
 
 message StoreUserTokenResponse {}
 
 message StoreChairTokenRequest {
-	string chairID = 1;
-	string token = 2;
+  string chairID = 1;
+  string token = 2;
 }
 
 message StoreChairTokenResponse {}
 
-
 message MatchableChair {
-	string id = 1;
-	string model = 2;
-	Coordinate coordinate = 3;
-	int64 createdAt = 4;
+  string id = 1;
+  string model = 2;
+  Coordinate coordinate = 3;
+  int64 createdAt = 4;
 }
 
 message MatchableRide {
-	string id = 1;
-	Coordinate coordinate = 2;
+  string id = 1;
+  Coordinate coordinate = 2;
 }
 
 message RideChair {
-	string rideID = 1;
-	Chair chair = 2;
+  string rideID = 1;
+  string chairID = 2;
 }
 
-
 message Coordinate {
-	int32 latitude = 1;
-	int32 longitude = 2;
+  int32 latitude = 1;
+  int32 longitude = 2;
 }
 
 message Chair {
-	string id = 1;
-	string name = 2;
-	string model = 3;
-	ChairStats stats = 4;
+  string id = 1;
+  string name = 2;
+  string model = 3;
+  ChairStats stats = 4;
 }
 
 message ChairStats {
-	int32 totalRidesCount = 1;
-	int32 totalEvaluationAvg = 2;
+  int32 totalRidesCount = 1;
+  int32 totalEvaluationAvg = 2;
 }
 
 message User {
-	string id = 1;
-	string name = 2;
+  string id = 1;
+  string name = 2;
 }

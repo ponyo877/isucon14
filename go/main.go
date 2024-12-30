@@ -13,17 +13,21 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/go-json-experiment/json"
+	"github.com/bytedance/sonic"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-sql-driver/mysql"
+	pb "github.com/isucon/isucon14/webapp/go/grpc"
 	"github.com/jmoiron/sqlx"
 	"github.com/kaz/pprotein/integration/standalone"
 )
 
 var db *sqlx.DB
 var paymentGatewayURL string
+var client pb.SubServiceClient
 
 func main() {
 	go func() {
@@ -77,6 +81,15 @@ func setup() http.Handler {
 	mu = sync.Mutex{}
 	db.SetMaxOpenConns(64)
 	db.SetMaxIdleConns(64)
+
+	subAddress := "192.168.0.12:8081"
+	conn, err := grpc.NewClient(subAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		panic(err)
+	}
+	// defer conn.Close()
+
+	client = pb.NewSubServiceClient(conn)
 
 	mux := chi.NewRouter()
 	mux.Use(middleware.Logger)
@@ -327,30 +340,29 @@ type Coordinate struct {
 }
 
 func bindJSON(r *http.Request, v interface{}) error {
-	return json.UnmarshalRead(r.Body, v)
+	return sonic.ConfigFastest.NewDecoder(r.Body).Decode(v)
 }
 
 func writeJSON(w http.ResponseWriter, statusCode int, v interface{}) {
 	w.Header().Set("Content-Type", "application/json;charset=utf-8")
-	buf, err := json.Marshal(v)
+	w.WriteHeader(statusCode)
+	err := sonic.ConfigFastest.NewEncoder(w).Encode(v)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	w.WriteHeader(statusCode)
-	w.Write(buf)
 }
 
 func writeError(w http.ResponseWriter, statusCode int, err error) {
 	w.Header().Set("Content-Type", "application/json;charset=utf-8")
 	w.WriteHeader(statusCode)
-	buf, marshalError := json.Marshal(map[string]string{"message": err.Error()})
-	if marshalError != nil {
+
+	err = sonic.ConfigFastest.NewEncoder(w).Encode(map[string]string{"message": err.Error()})
+	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write([]byte(`{"error":"marshaling error failed"}`))
 		return
 	}
-	w.Write(buf)
 
 	slog.Error("error response wrote", err)
 }

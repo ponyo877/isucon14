@@ -213,6 +213,7 @@ func createChairTotalDistance(chairID string, distance int, now time.Time) {
 		UpdatedAt:     now,
 	})
 }
+
 func getChairSpeedbyName(model string) (int, bool) {
 	speed, ok := chairSpeedbyName.Load(model)
 	if !ok {

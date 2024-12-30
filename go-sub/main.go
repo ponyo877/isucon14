@@ -3,11 +3,15 @@ package main
 import (
 	"encoding/json"
 	"log/slog"
+	"net"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/kaz/pprotein/integration/standalone"
+	pb "github.com/ponyo877/isucon14/go-sub/grpc"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
 )
 
 type Coordinate struct {
@@ -21,7 +25,18 @@ func main() {
 	}()
 	mux := setup()
 	slog.Info("Listening on :8080")
-	http.ListenAndServe(":8080", mux)
+	go http.ListenAndServe(":8080", mux)
+
+	listener, err := net.Listen("tcp", ":8081")
+	if err != nil {
+		panic(err)
+	}
+	s := grpc.NewServer()
+	pb.RegisterSubServiceServer(s, NewServer())
+	reflection.Register(s)
+
+	slog.Info("Listening on :8081")
+	s.Serve(listener)
 }
 
 func setup() http.Handler {

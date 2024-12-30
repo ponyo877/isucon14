@@ -283,6 +283,7 @@ func appPostRidesEstimatedFare(w http.ResponseWriter, r *http.Request) {
 func calculateDistance(aLatitude, aLongitude, bLatitude, bLongitude int) int {
 	return abs(aLatitude-bLatitude) + abs(aLongitude-bLongitude)
 }
+
 func abs(a int) int {
 	if a < 0 {
 		return -a
