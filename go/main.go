@@ -130,11 +130,6 @@ func setup() http.Handler {
 		authedMux.HandleFunc("POST /api/chair/rides/{ride_id}/status", chairPostRideStatus)
 	}
 
-	// internal handlers
-	{
-		mux.HandleFunc("GET /api/internal/matching", internalGetMatching)
-	}
-
 	return mux
 }
 
@@ -330,7 +325,7 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 	for _, r := range rides {
 		addRideIDsUserID(r.UserID, r.ID)
 	}
-
+	go startMatchingLoop()
 	writeJSON(w, http.StatusOK, postInitializeResponse{Language: "go"})
 }
 

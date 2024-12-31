@@ -250,6 +250,9 @@ func addChairStats(chairID string, evaluation int) {
 
 func getChairAccessToken(token string) (*Chair, bool) {
 	chair, ok := chairAccessToken.Load(token)
+	if !ok {
+		return nil, false
+	}
 	return chair.(*Chair), ok
 }
 
@@ -259,6 +262,9 @@ func createChairAccessToken(token string, chair *Chair) {
 
 func getAppAccessToken(token string) (*User, bool) {
 	user, ok := appAccessToken.Load(token)
+	if !ok {
+		return nil, false
+	}
 	return user.(*User), ok
 }
 
@@ -268,6 +274,9 @@ func createAppAccessToken(token string, user *User) {
 
 func getOwnerAccessToken(token string) (*Owner, bool) {
 	owner, ok := ownerAccessToken.Load(token)
+	if !ok {
+		return nil, false
+	}
 	return owner.(*Owner), ok
 }
 
