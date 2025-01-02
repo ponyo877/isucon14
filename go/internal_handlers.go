@@ -14,7 +14,7 @@ import (
 var mu sync.Mutex
 
 func startMatchingLoop() {
-	ticker := time.NewTicker(500 * time.Millisecond)
+	ticker := time.NewTicker(75 * time.Millisecond)
 	for range ticker.C {
 		mu.Lock()
 		internalGetMatching()
