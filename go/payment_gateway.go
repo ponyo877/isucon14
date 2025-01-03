@@ -3,10 +3,11 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+
+	"github.com/bytedance/sonic"
 )
 
 var erroredUpstream = errors.New("errored upstream")
@@ -21,7 +22,7 @@ type paymentGatewayGetPaymentsResponseOne struct {
 }
 
 func requestPaymentGatewayPostPayment(ctx context.Context, paymentGatewayURL string, rideId, token string, param *paymentGatewayPostPaymentRequest) error {
-	b, err := json.Marshal(param)
+	b, err := sonic.Marshal(param)
 	if err != nil {
 		return err
 	}

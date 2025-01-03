@@ -186,15 +186,6 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	chairModels := []ChairModel{}
-	if err := db.SelectContext(ctx, &chairModels, "SELECT * FROM chair_models"); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-	for _, cm := range chairModels {
-		createChairSpeedbyName(cm.Name, cm.Speed)
-	}
-
 	rideStatuses := []RideStatus{}
 	if err := db.SelectContext(ctx, &rideStatuses, `
 		SELECT rs1.* FROM ride_statuses rs1

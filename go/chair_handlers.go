@@ -1,12 +1,12 @@
 package main
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
 	"time"
 
+	"github.com/bytedance/sonic"
 	"github.com/oklog/ulid/v2"
 )
 
@@ -218,7 +218,7 @@ func chairGetNotification(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				return
 			}
-			resV, err := json.Marshal(response.Data)
+			resV, err := sonic.Marshal(response.Data)
 			if err != nil {
 				return
 			}
