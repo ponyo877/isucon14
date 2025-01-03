@@ -15,6 +15,9 @@ TAG=isuride:latest
 build:
 	CGO_ENABLED=0 $(LINUX_TARGET_ENV)  $(BUILD) -o $(DESTDIR)/isuride -ldflags "-s -w"
 
+pbuild:
+	CGO_ENABLED=0 $(LINUX_TARGET_ENV)  $(BUILD) -o $(DESTDIR)/isuride -pgo ./pprof/profile.pprof -ldflags "-s -w"
+
 .PHONY: darwin
 darwin:
 	CGO_ENABLED=0 $(DARWIN_TARGET_ENV) $(BUILD) -o $(DESTDIR)/isuride_darwin -ldflags "-s -w"
