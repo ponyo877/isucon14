@@ -1,8 +1,7 @@
 upstream app {
-	# server 127.0.0.1:8080;
-	server 192.168.0.13:8080;
+	server 127.0.0.1:8080;
 	keepalive_requests 1000000;
-	keepalive 256;
+	keepalive 1024;
 }
 server {
   listen 8480 default_server;
