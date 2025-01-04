@@ -19,12 +19,21 @@ func startMatchingLoop() {
 	ticker := time.NewTicker(75 * time.Millisecond)
 	for range ticker.C {
 		mu.Lock()
-		internalGetMatchingOutsource()
+		if ok := internalGetMatchingOutsource(); ok {
+			mu.Unlock()
+			break
+		}
+		mu.Unlock()
+	}
+	ticker2 := time.NewTicker(30 * time.Millisecond)
+	for range ticker2.C {
+		mu.Lock()
+		internalGetMatchingGreedy()
 		mu.Unlock()
 	}
 }
 
-func internalGetMatchingOutsource() {
+func internalGetMatchingOutsource() (isNoAgeLimit bool) {
 	freeChairs.Lock()
 	chairs := freeChairs.List()
 	freeChairs.Unlock()
@@ -35,13 +44,17 @@ func internalGetMatchingOutsource() {
 	if len(rides) == 0 {
 		return
 	}
-	fmt.Printf("[DEBUG] chairs, rides: %d, %d\n", len(chairs), len(rides))
+	fmt.Printf("[DEBUG1] chairs, rides: %d, %d\n", len(chairs), len(rides))
 	slices.SortFunc(rides, func(a, b *Ride) int {
 		if a.CreatedAt.Before(b.CreatedAt) {
 			return -1
 		}
 		return 0
 	})
+	// if rides[0].CreatedAt.After(benchStartedAt.Add(35 * time.Second)) {
+	// 	isNoAgeLimit = true
+	// 	return
+	// }
 	min := 5 * len(chairs)
 	if len(rides) < min {
 		min = len(rides)
@@ -82,7 +95,7 @@ func internalGetMatchingOutsource() {
 		},
 	)
 	if err != nil {
-		fmt.Printf("[DEBUG] %v\n", err)
+		fmt.Printf("%v\n", err)
 		return
 	}
 	// match
@@ -103,11 +116,12 @@ func internalGetMatchingOutsource() {
 		publishChairChan(chairID, notif)
 		publishAppChan(ride.UserID, notif)
 	}
+	return
 }
 
 type MatchableChair struct {
 	ID        string
-	Model     string
+	Speed     int
 	Latitude  int
 	Longitude int
 }
@@ -124,7 +138,7 @@ func internalGetMatchingSelf() {
 		return
 	}
 
-	fmt.Printf("[DEBUG] chairs, rides: %d, %d\n", len(chairs), len(rides))
+	fmt.Printf("[DEBUG1] chairs, rides: %d, %d\n", len(chairs), len(rides))
 	slices.SortFunc(rides, func(a, b *Ride) int {
 		if a.CreatedAt.Before(b.CreatedAt) {
 			return -1
@@ -139,7 +153,7 @@ func internalGetMatchingSelf() {
 		}
 		matchableChairs = append(matchableChairs, &MatchableChair{
 			ID:        c.ID,
-			Model:     c.Model,
+			Speed:     c.Speed,
 			Latitude:  coord.Latitude,
 			Longitude: coord.Longitude,
 		})
@@ -165,8 +179,7 @@ func internalGetMatchingSelf() {
 	for i, c := range matchableChairs {
 		for j, r := range rides {
 			distance := calculateDistance(c.Latitude, c.Longitude, r.PickupLatitude, r.PickupLongitude)
-			speed := getChairSpeedbyName(c.Model)
-			time := distance / speed
+			time := distance / c.Speed
 			mcf.AddEdge(i+1, chairsCount+j+1, 1, time)
 		}
 	}
@@ -189,6 +202,70 @@ func internalGetMatchingSelf() {
 		chairID := chairs[e.From()-1].ID
 		ride := rides[e.To()-chairsCount-1]
 
+		ride.ChairID = sql.NullString{String: chairID, Valid: true}
+		createLatestRide(chairID, ride)
+		freeChairs.Remove(chairID)
+		waitingRides.Remove(ride.ID)
+		createRide(ride.ID, ride)
+		createUserRideStatus(ride.UserID, false)
+		notif := &Notif{
+			Ride:       ride,
+			RideStatus: "MATCHING",
+		}
+		publishChairChan(chairID, notif)
+		publishAppChan(ride.UserID, notif)
+	}
+}
+
+func internalGetMatchingGreedy() {
+	freeChairs.Lock()
+	chairs := freeChairs.List()
+	freeChairs.Unlock()
+	if len(chairs) < 5 {
+		return
+	}
+	rides := waitingRides.List()
+	if len(rides) == 0 {
+		return
+	}
+
+	fmt.Printf("[DEBUG2] chairs, rides: %d, %d\n", len(chairs), len(rides))
+	matchableChairs := []*MatchableChair{}
+	for _, c := range chairs {
+		coord, ok := getLatestChairLocation(c.ID)
+		if !ok {
+			continue
+		}
+		matchableChairs = append(matchableChairs, &MatchableChair{
+			ID:        c.ID,
+			Speed:     c.Speed,
+			Latitude:  coord.Latitude,
+			Longitude: coord.Longitude,
+		})
+	}
+	slices.SortFunc(matchableChairs, func(a, b *MatchableChair) int {
+		if a.Speed > b.Speed {
+			return -1
+		}
+		return 0
+	})
+	matched := map[int]bool{}
+	for _, c := range matchableChairs {
+		minDistance := 1000000000
+		matchRideIdx := -1
+		for j, r := range rides {
+			if matched[j] {
+				continue
+			}
+			distance := calculateDistance(c.Latitude, c.Longitude, r.PickupLatitude, r.PickupLongitude)
+			if distance < minDistance {
+				minDistance = distance
+				matchRideIdx = j
+			}
+		}
+		matched[matchRideIdx] = true
+		chairID := c.ID
+		ride := rides[matchRideIdx]
 		ride.ChairID = sql.NullString{String: chairID, Valid: true}
 		createLatestRide(chairID, ride)
 		freeChairs.Remove(chairID)

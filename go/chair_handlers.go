@@ -50,6 +50,7 @@ func chairPostChairs(w http.ResponseWriter, r *http.Request) {
 		AccessToken: accessToken,
 		CreatedAt:   now,
 		UpdatedAt:   now,
+		Speed:       getChairSpeedbyName(req.Model),
 	}
 	createChair(chairID, chair)
 	createChairAccessToken(accessToken, chair)
