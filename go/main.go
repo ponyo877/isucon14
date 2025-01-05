@@ -25,7 +25,6 @@ import (
 	"github.com/go-sql-driver/mysql"
 	pb "github.com/isucon/isucon14/webapp/go/grpc"
 	"github.com/jmoiron/sqlx"
-	"github.com/kaz/pprotein/integration/standalone"
 )
 
 var db *sqlx.DB
@@ -34,9 +33,9 @@ var client pb.SubServiceClient
 var benchStartedAt time.Time
 
 func main() {
-	go func() {
-		standalone.Integrate(":19001")
-	}()
+	// go func() {
+	// 	standalone.Integrate(":19001")
+	// }()
 	mux := setup()
 	// mux := setupFiber()
 	slog.Info("Listening on :8080")
@@ -269,11 +268,11 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	go func() {
-		if _, err := http.Get("http://192.168.0.14:9000/api/group/collect"); err != nil {
-			log.Printf("failed to communicate with pprotein: %v", err)
-		}
-	}()
+	// go func() {
+	// 	if _, err := http.Get("http://192.168.0.14:9000/api/group/collect"); err != nil {
+	// 		log.Printf("failed to communicate with pprotein: %v", err)
+	// 	}
+	// }()
 	initCache()
 
 	chairLocations := []ChairLocation{}
