@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/gammazero/deque"
-	"github.com/oklog/ulid/v2"
 )
 
 type Notif struct {
@@ -179,11 +178,11 @@ func deleteLatestRide(chairID string) {
 
 func processRideStatus(ride *Ride, status string) {
 	createLatestRideStatus(ride.ID, status)
-	id := ulid.Make().String()
+	// id := ulid.Make().String()
 	notif := &Notif{
-		Ride:         ride,
-		RideStatusID: id,
-		RideStatus:   status,
+		Ride: ride,
+		// RideStatusID: id,
+		RideStatus: status,
 	}
 	publishAppChan(ride.UserID, notif)
 	if ride.ChairID.Valid {
