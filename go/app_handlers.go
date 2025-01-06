@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"errors"
 	"net/http"
 	"strconv"
@@ -10,19 +9,6 @@ import (
 	"github.com/bytedance/sonic"
 	"github.com/oklog/ulid/v2"
 )
-
-type appPostUsersRequest struct {
-	Username       string  `json:"username"`
-	FirstName      string  `json:"firstname"`
-	LastName       string  `json:"lastname"`
-	DateOfBirth    string  `json:"date_of_birth"`
-	InvitationCode *string `json:"invitation_code"`
-}
-
-type appPostUsersResponse struct {
-	ID             string `json:"id"`
-	InvitationCode string `json:"invitation_code"`
-}
 
 func appPostUsers(w http.ResponseWriter, r *http.Request) {
 	req := &appPostUsersRequest{}
@@ -93,10 +79,6 @@ func appPostUsers(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-type appPostPaymentMethodsRequest struct {
-	Token string `json:"token"`
-}
-
 func appPostPaymentMethods(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	req := &appPostPaymentMethodsRequest{}
@@ -114,28 +96,6 @@ func appPostPaymentMethods(w http.ResponseWriter, r *http.Request) {
 	createPaymentToken(user.ID, req.Token)
 
 	w.WriteHeader(http.StatusNoContent)
-}
-
-type getAppRidesResponse struct {
-	Rides []getAppRidesResponseItem `json:"rides"`
-}
-
-type getAppRidesResponseItem struct {
-	ID                    string                       `json:"id"`
-	PickupCoordinate      Coordinate                   `json:"pickup_coordinate"`
-	DestinationCoordinate Coordinate                   `json:"destination_coordinate"`
-	Chair                 getAppRidesResponseItemChair `json:"chair"`
-	Fare                  int                          `json:"fare"`
-	Evaluation            int                          `json:"evaluation"`
-	RequestedAt           int64                        `json:"requested_at"`
-	CompletedAt           int64                        `json:"completed_at"`
-}
-
-type getAppRidesResponseItemChair struct {
-	ID    string `json:"id"`
-	Owner string `json:"owner"`
-	Name  string `json:"name"`
-	Model string `json:"model"`
 }
 
 func appGetRides(w http.ResponseWriter, r *http.Request) {
@@ -179,21 +139,6 @@ func appGetRides(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, &getAppRidesResponse{
 		Rides: items,
 	})
-}
-
-type appPostRidesRequest struct {
-	PickupCoordinate      *Coordinate `json:"pickup_coordinate"`
-	DestinationCoordinate *Coordinate `json:"destination_coordinate"`
-}
-
-type appPostRidesResponse struct {
-	RideID string `json:"ride_id"`
-	Fare   int    `json:"fare"`
-}
-
-type executableGet interface {
-	Get(dest interface{}, query string, args ...interface{}) error
-	GetContext(ctx context.Context, dest interface{}, query string, args ...interface{}) error
 }
 
 func appPostRides(w http.ResponseWriter, r *http.Request) {
@@ -247,16 +192,6 @@ func appPostRides(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-type appPostRidesEstimatedFareRequest struct {
-	PickupCoordinate      *Coordinate `json:"pickup_coordinate"`
-	DestinationCoordinate *Coordinate `json:"destination_coordinate"`
-}
-
-type appPostRidesEstimatedFareResponse struct {
-	Fare     int `json:"fare"`
-	Discount int `json:"discount"`
-}
-
 func appPostRidesEstimatedFare(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	req := &appPostRidesEstimatedFareRequest{}
@@ -277,26 +212,6 @@ func appPostRidesEstimatedFare(w http.ResponseWriter, r *http.Request) {
 		Fare:     discounted,
 		Discount: calculateFare(req.PickupCoordinate.Latitude, req.PickupCoordinate.Longitude, req.DestinationCoordinate.Latitude, req.DestinationCoordinate.Longitude) - discounted,
 	})
-}
-
-// マンハッタン距離を求める
-func calculateDistance(aLatitude, aLongitude, bLatitude, bLongitude int) int {
-	return abs(aLatitude-bLatitude) + abs(aLongitude-bLongitude)
-}
-
-func abs(a int) int {
-	if a < 0 {
-		return -a
-	}
-	return a
-}
-
-type appPostRideEvaluationRequest struct {
-	Evaluation int `json:"evaluation"`
-}
-
-type appPostRideEvaluationResponse struct {
-	CompletedAt int64 `json:"completed_at"`
 }
 
 func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
@@ -358,34 +273,6 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-type appGetNotificationResponse struct {
-	Data         *appGetNotificationResponseData `json:"data"`
-	RetryAfterMs int                             `json:"retry_after_ms"`
-}
-
-type appGetNotificationResponseData struct {
-	RideID                string                           `json:"ride_id"`
-	PickupCoordinate      Coordinate                       `json:"pickup_coordinate"`
-	DestinationCoordinate Coordinate                       `json:"destination_coordinate"`
-	Fare                  int                              `json:"fare"`
-	Status                string                           `json:"status"`
-	Chair                 *appGetNotificationResponseChair `json:"chair,omitempty"`
-	CreatedAt             int64                            `json:"created_at"`
-	UpdateAt              int64                            `json:"updated_at"`
-}
-
-type appGetNotificationResponseChair struct {
-	ID    string                               `json:"id"`
-	Name  string                               `json:"name"`
-	Model string                               `json:"model"`
-	Stats appGetNotificationResponseChairStats `json:"stats"`
-}
-
-type appGetNotificationResponseChairStats struct {
-	TotalRidesCount    int     `json:"total_rides_count"`
-	TotalEvaluationAvg float64 `json:"total_evaluation_avg"`
-}
-
 // SSE
 func appGetNotification(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -429,61 +316,6 @@ func appGetNotification(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-}
-
-func getAppNotification(user *User, ride *Ride, rideStatus string) (*appGetNotificationResponse, error) {
-	fare := calculateDiscountedFare(user.ID, ride, ride.PickupLatitude, ride.PickupLongitude, ride.DestinationLatitude, ride.DestinationLongitude)
-	response := &appGetNotificationResponse{
-		Data: &appGetNotificationResponseData{
-			RideID: ride.ID,
-			PickupCoordinate: Coordinate{
-				Latitude:  ride.PickupLatitude,
-				Longitude: ride.PickupLongitude,
-			},
-			DestinationCoordinate: Coordinate{
-				Latitude:  ride.DestinationLatitude,
-				Longitude: ride.DestinationLongitude,
-			},
-			Fare:      fare,
-			Status:    rideStatus,
-			CreatedAt: ride.CreatedAt.UnixMilli(),
-			UpdateAt:  ride.UpdatedAt.UnixMilli(),
-		},
-	}
-
-	if ride.ChairID.Valid {
-		chair, _ := getChair(ride.ChairID.String)
-		stats := getChairStats(chair.ID)
-		response.Data.Chair = &appGetNotificationResponseChair{
-			ID:    chair.ID,
-			Name:  chair.Name,
-			Model: chair.Model,
-			Stats: stats,
-		}
-	}
-
-	return response, nil
-}
-
-func getChairStats(chairID string) appGetNotificationResponseChairStats {
-	stats := appGetNotificationResponseChairStats{}
-	if statsCache, ok := getChairStatsCache(chairID); ok {
-		stats.TotalRidesCount = statsCache.RideCount
-		stats.TotalEvaluationAvg = statsCache.TotalEvaluation / float64(statsCache.RideCount)
-	}
-	return stats
-}
-
-type appGetNearbyChairsResponse struct {
-	Chairs      []appGetNearbyChairsResponseChair `json:"chairs"`
-	RetrievedAt int64                             `json:"retrieved_at"`
-}
-
-type appGetNearbyChairsResponseChair struct {
-	ID                string     `json:"id"`
-	Name              string     `json:"name"`
-	Model             string     `json:"model"`
-	CurrentCoordinate Coordinate `json:"current_coordinate"`
 }
 
 func appGetNearbyChairs(w http.ResponseWriter, r *http.Request) {
@@ -549,33 +381,4 @@ func appGetNearbyChairs(w http.ResponseWriter, r *http.Request) {
 		Chairs:      nearbyChairs,
 		RetrievedAt: retrievedAt.UnixMilli(),
 	})
-}
-
-func calculateFare(pickupLatitude, pickupLongitude, destLatitude, destLongitude int) int {
-	meteredFare := farePerDistance * calculateDistance(pickupLatitude, pickupLongitude, destLatitude, destLongitude)
-	return initialFare + meteredFare
-}
-
-func calculateDiscountedFare(userID string, ride *Ride, pickupLatitude, pickupLongitude, destLatitude, destLongitude int) int {
-	discount := 0
-	if ride != nil {
-		destLatitude = ride.DestinationLatitude
-		destLongitude = ride.DestinationLongitude
-		pickupLatitude = ride.PickupLatitude
-		pickupLongitude = ride.PickupLongitude
-
-		// すでにクーポンが紐づいているならそれの割引額を参照
-		if amount, ok := getRideDiscount(ride.ID); ok {
-			discount = amount
-		}
-	} else {
-		// 初回利用クーポンを最優先で使う
-		if amount, ok := getUnusedCoupon(userID); ok {
-			discount = amount
-		}
-	}
-	meteredFare := farePerDistance * calculateDistance(pickupLatitude, pickupLongitude, destLatitude, destLongitude)
-	discountedMeteredFare := max(meteredFare-discount, 0)
-
-	return initialFare + discountedMeteredFare
 }

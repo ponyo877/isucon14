@@ -3,23 +3,11 @@ package main
 import (
 	"errors"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/bytedance/sonic"
 	"github.com/oklog/ulid/v2"
 )
-
-type chairPostChairsRequest struct {
-	Name               string `json:"name"`
-	Model              string `json:"model"`
-	ChairRegisterToken string `json:"chair_register_token"`
-}
-
-type chairPostChairsResponse struct {
-	ID      string `json:"id"`
-	OwnerID string `json:"owner_id"`
-}
 
 func chairPostChairs(w http.ResponseWriter, r *http.Request) {
 	req := &chairPostChairsRequest{}
@@ -68,10 +56,6 @@ func chairPostChairs(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-type postChairActivityRequest struct {
-	IsActive bool `json:"is_active"`
-}
-
 func chairPostActivity(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	chair := ctx.Value("chair").(*Chair)
@@ -88,54 +72,6 @@ func chairPostActivity(w http.ResponseWriter, r *http.Request) {
 	}
 	freeChairs.Remove(chair.ID)
 	w.WriteHeader(http.StatusNoContent)
-}
-
-type chairPostCoordinateResponse struct {
-	RecordedAt int64 `json:"recorded_at"`
-}
-
-func posComma(b []byte) int {
-	if b[13] == 44 {
-		return 13
-	}
-	if b[14] == 44 {
-		return 14
-	}
-	if b[15] == 44 {
-		return 15
-	}
-	return -1
-}
-
-func byteToInt(b []byte) int {
-	sign := 1
-	if b[0] == 45 {
-		b = b[1:]
-		sign = -1
-	}
-	n := 0
-	for _, ch := range b {
-		ch -= '0'
-		n = n*10 + int(ch)
-	}
-	return sign * n
-}
-
-func chairPostCoordinateBindJSON(r *http.Request, req *Coordinate) {
-	len := r.ContentLength
-	body := make([]byte, len)
-	r.Body.Read(body)
-	pos := posComma(body)
-	req.Latitude = byteToInt(body[12:pos])
-	req.Longitude = byteToInt(body[pos+13 : len-1])
-}
-
-func chairPostCoordinateWriteJSON(w http.ResponseWriter, now time.Time) {
-	w.Header().Set("Content-Type", "application/json;charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(`{"recorded_at":`))
-	w.Write([]byte(strconv.FormatInt(now.UnixMilli(), 10)))
-	w.Write([]byte("}"))
 }
 
 func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
@@ -174,24 +110,6 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 		distance := calculateDistance(before.Latitude, before.Longitude, req.Latitude, req.Longitude)
 		createChairTotalDistance(chair.ID, distance, now)
 	}
-}
-
-type simpleUser struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-}
-
-type chairGetNotificationResponse struct {
-	Data         *chairGetNotificationResponseData `json:"data"`
-	RetryAfterMs int                               `json:"retry_after_ms"`
-}
-
-type chairGetNotificationResponseData struct {
-	RideID                string     `json:"ride_id"`
-	User                  simpleUser `json:"user"`
-	PickupCoordinate      Coordinate `json:"pickup_coordinate"`
-	DestinationCoordinate Coordinate `json:"destination_coordinate"`
-	Status                string     `json:"status"`
 }
 
 // SSE
@@ -243,36 +161,6 @@ func chairGetNotification(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-}
-
-func getChairNotification(ride *Ride, rideStatus string) (*chairGetNotificationResponse, error) {
-	user, ok := getUser(ride.UserID)
-	if !ok {
-		return nil, errors.New("user not found")
-	}
-
-	return &chairGetNotificationResponse{
-		Data: &chairGetNotificationResponseData{
-			RideID: ride.ID,
-			User: simpleUser{
-				ID:   user.ID,
-				Name: user.Firstname + " " + user.Lastname,
-			},
-			PickupCoordinate: Coordinate{
-				Latitude:  ride.PickupLatitude,
-				Longitude: ride.PickupLongitude,
-			},
-			DestinationCoordinate: Coordinate{
-				Latitude:  ride.DestinationLatitude,
-				Longitude: ride.DestinationLongitude,
-			},
-			Status: rideStatus,
-		},
-	}, nil
-}
-
-type postChairRidesRideIDStatusRequest struct {
-	Status string `json:"status"`
 }
 
 func chairPostRideStatus(w http.ResponseWriter, r *http.Request) {

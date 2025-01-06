@@ -16,8 +16,7 @@ import (
 
 	"github.com/bytedance/sonic"
 	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/fiber/v2/middleware/logger"
-	"github.com/gofiber/fiber/v2/middleware/recover"
+	"github.com/kaz/pprotein/integration/standalone"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
@@ -33,14 +32,24 @@ var client pb.SubServiceClient
 var benchStartedAt time.Time
 
 func main() {
-	// go func() {
-	// 	standalone.Integrate(":19001")
-	// }()
-	mux := setup()
-	// mux := setupFiber()
+	go func() {
+		standalone.Integrate(":19001")
+	}()
+	muxNotif := setupForNotif()
+	mux := setupFiber()
 	slog.Info("Listening on :8080")
-	http.ListenAndServe(":8080", mux)
-	// mux.Listen("0.0.0.0:8080")
+	go http.ListenAndServe(":8081", muxNotif)
+	listenAddr := net.JoinHostPort("", strconv.Itoa(8080))
+	if err := mux.Listen(listenAddr); err != nil {
+		fmt.Printf("failed to listen: %v", err)
+	}
+}
+
+func setupForNotif() http.Handler {
+	mux := chi.NewRouter()
+	mux.With(appAuthMiddleware).HandleFunc("GET /api/app/notification", appGetNotification)
+	mux.With(chairAuthMiddleware).HandleFunc("GET /api/chair/notification", chairGetNotification)
+	return mux
 }
 
 func setup() http.Handler {
@@ -191,19 +200,11 @@ func setupFiber() *fiber.App {
 
 	client = pb.NewSubServiceClient(conn)
 
-	// mux := fiber.New(fiber.Config{
-	// 	JSONEncoder: sonic.Marshal,
-	// 	JSONDecoder: sonic.Unmarshal,
-	// })
-	mux := fiber.New(
-		fiber.Config{
-			JSONEncoder: sonic.Marshal,
-			JSONDecoder: sonic.Unmarshal,
-			Concurrency: 1024 * 1024,
-		},
-	)
-	mux.Use(logger.New())
-	mux.Use(recover.New())
+	mux := fiber.New(fiber.Config{
+		JSONEncoder:  sonic.Marshal,
+		JSONDecoder:  sonic.Unmarshal,
+		ErrorHandler: errorResponseHandler,
+	})
 	mux.Post("/api/initialize", postInitializeFiber)
 	mux.Post("/api/app/users", appPostUsersFiber)
 	mux.Post("/api/owner/owners", ownerPostOwnersFiber)
@@ -211,33 +212,33 @@ func setupFiber() *fiber.App {
 
 	// app handlers
 	{
-		authedMux := mux.Group("/api/app")
-		authedMux.Use(appAuthMiddlewareFiber)
-		authedMux.Post("/payment-methods", appPostPaymentMethodsFiber)
-		authedMux.Get("/rides", appGetRidesFiber)
-		authedMux.Post("/rides", appPostRidesFiber)
-		authedMux.Post("/rides/estimated-fare", appPostRidesEstimatedFareFiber)
-		authedMux.Post("/rides/:ride_id/evaluation", appPostRideEvaluatationFiber)
-		authedMux.Get("/notification", appGetNotificationFiber)
-		authedMux.Get("/nearby-chairs", appGetNearbyChairsFiber)
+		authedMuxApp := mux.Group("/api/app")
+		authedMuxApp.Use(appAuthMiddlewareFiber)
+		authedMuxApp.Post("/payment-methods", appPostPaymentMethodsFiber)
+		authedMuxApp.Get("/rides", appGetRidesFiber)
+		authedMuxApp.Post("/rides", appPostRidesFiber)
+		authedMuxApp.Post("/rides/estimated-fare", appPostRidesEstimatedFareFiber)
+		authedMuxApp.Post("/rides/:ride_id/evaluation", appPostRideEvaluatationFiber)
+		// authedMuxApp.Get("/notification", appGetNotificationFiber)
+		authedMuxApp.Get("/nearby-chairs", appGetNearbyChairsFiber)
 	}
 
 	// owner handlers
 	{
-		authedMux := mux.Group("/api/owner")
-		authedMux.Use(ownerAuthMiddlewareFiber)
-		authedMux.Get("/sales", ownerGetSalesFiber)
-		authedMux.Get("/chairs", ownerGetChairsFiber)
+		authedMuxOwner := mux.Group("/api/owner")
+		authedMuxOwner.Use(ownerAuthMiddlewareFiber)
+		authedMuxOwner.Get("/sales", ownerGetSalesFiber)
+		authedMuxOwner.Get("/chairs", ownerGetChairsFiber)
 	}
 
 	// chair handlers
 	{
-		authedMux := mux.Group("/api/chair")
-		authedMux.Use(chairAuthMiddlewareFiber)
-		authedMux.Post("/activity", chairPostActivityFiber)
-		authedMux.Post("/coordinate", chairPostCoordinateFiber)
-		authedMux.Get("/notification", chairGetNotificationFiber)
-		authedMux.Post("/rides/:ride_id/status", chairPostRideStatusFiber)
+		authedMuxChair := mux.Group("/api/chair")
+		authedMuxChair.Use(chairAuthMiddlewareFiber)
+		authedMuxChair.Post("/activity", chairPostActivityFiber)
+		authedMuxChair.Post("/coordinate", chairPostCoordinateFiber)
+		// authedMuxChair.Get("/notification", chairGetNotificationFiber)
+		authedMuxChair.Post("/rides/:ride_id/status", chairPostRideStatusFiber)
 	}
 
 	return mux
@@ -268,11 +269,11 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	// go func() {
-	// 	if _, err := http.Get("http://192.168.0.14:9000/api/group/collect"); err != nil {
-	// 		log.Printf("failed to communicate with pprotein: %v", err)
-	// 	}
-	// }()
+	go func() {
+		if _, err := http.Get("http://192.168.0.14:9000/api/group/collect"); err != nil {
+			log.Printf("failed to communicate with pprotein: %v", err)
+		}
+	}()
 	initCache()
 
 	chairLocations := []ChairLocation{}
@@ -627,6 +628,19 @@ func writeError(w http.ResponseWriter, statusCode int, err error) {
 	}
 
 	slog.Error("error response wrote", err)
+}
+
+type ErrorResponse struct {
+	Error string `json:"message"`
+}
+
+func errorResponseHandler(c *fiber.Ctx, err error) error {
+	fmt.Printf("error at %s: %+v", c.Path(), err)
+	if he, ok := err.(*fiber.Error); ok {
+		return c.Status(he.Code).JSON(&ErrorResponse{Error: err.Error()})
+	}
+
+	return c.Status(http.StatusInternalServerError).JSON(&ErrorResponse{Error: err.Error()})
 }
 
 func secureRandomStr(b int) string {

@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+	"net/http"
 	"strconv"
 	"time"
 
@@ -11,11 +11,11 @@ import (
 
 func ownerPostOwnersFiber(c *fiber.Ctx) error {
 	req := &ownerPostOwnersRequest{}
-	if err := c.BodyParser(req); err != nil {
-		return c.SendStatus(fiber.StatusBadRequest)
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.NewError(http.StatusBadRequest, err.Error())
 	}
 	if req.Name == "" {
-		return c.SendStatus(fiber.StatusBadRequest)
+		return fiber.NewError(http.StatusBadRequest, "some of required fields(name) are empty")
 	}
 
 	ownerID := ulid.Make().String()
@@ -35,12 +35,12 @@ func ownerPostOwnersFiber(c *fiber.Ctx) error {
 	createOwnerChairRegisterToken(chairRegisterToken, owner)
 
 	c.Cookie(&fiber.Cookie{
-		// Path:  "/",
+		Path:  "/",
 		Name:  "owner_session",
 		Value: accessToken,
 	})
 
-	return c.Status(fiber.StatusCreated).JSON(&ownerPostOwnersResponse{
+	return c.Status(http.StatusCreated).JSON(&ownerPostOwnersResponse{
 		ID:                 ownerID,
 		ChairRegisterToken: chairRegisterToken,
 	})
@@ -52,19 +52,19 @@ func ownerGetSalesFiber(c *fiber.Ctx) error {
 	if c.Query("since") != "" {
 		parsed, err := strconv.ParseInt(c.Query("since"), 10, 64)
 		if err != nil {
-			return c.SendStatus(fiber.StatusBadRequest)
+			return fiber.NewError(http.StatusBadRequest, err.Error())
 		}
 		since = time.UnixMilli(parsed)
 	}
 	if c.Query("until") != "" {
 		parsed, err := strconv.ParseInt(c.Query("until"), 10, 64)
 		if err != nil {
-			return c.SendStatus(fiber.StatusBadRequest)
+			return fiber.NewError(http.StatusBadRequest, err.Error())
 		}
 		until = time.UnixMilli(parsed)
 	}
 
-	owner := c.Locals("owner").(*Owner)
+	owner := c.Context().UserValue("owner").(*Owner)
 
 	chairs, _ := getChairsOwnerID(owner.ID)
 	res := ownerGetSalesResponse{
@@ -109,11 +109,12 @@ func ownerGetSalesFiber(c *fiber.Ctx) error {
 		})
 	}
 	res.Models = models
-	return c.JSON(res)
+	return c.Status(http.StatusOK).JSON(res)
 }
 
 func ownerGetChairsFiber(c *fiber.Ctx) error {
-	owner := c.Locals("owner").(*Owner)
+	ctx := c.Context()
+	owner := ctx.UserValue("owner").(*Owner)
 
 	chairs, _ := getChairsOwnerID(owner.ID)
 	res := ownerGetChairResponse{}
@@ -133,6 +134,5 @@ func ownerGetChairsFiber(c *fiber.Ctx) error {
 		}
 		res.Chairs = append(res.Chairs, c)
 	}
-	fmt.Printf("[DEBUG] len(chairs): %v\n", len(chairs))
-	return c.JSON(res)
+	return c.Status(http.StatusOK).JSON(res)
 }

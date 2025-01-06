@@ -4,7 +4,6 @@ go 1.24rc1
 
 require (
 	github.com/bytedance/sonic v1.12.6
-	github.com/gammazero/deque v1.0.0
 	github.com/go-chi/chi/v5 v5.2.0
 	github.com/go-sql-driver/mysql v1.8.1
 	github.com/gofiber/fiber/v2 v2.52.6

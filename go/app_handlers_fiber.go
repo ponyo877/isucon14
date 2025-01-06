@@ -3,7 +3,7 @@ package main
 import (
 	"bufio"
 	"errors"
-	"fmt"
+	"net/http"
 	"strconv"
 	"time"
 
@@ -15,11 +15,11 @@ import (
 
 func appPostUsersFiber(c *fiber.Ctx) error {
 	req := &appPostUsersRequest{}
-	if err := c.BodyParser(req); err != nil {
-		return c.SendStatus(fiber.StatusBadRequest)
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.NewError(http.StatusBadRequest, err.Error())
 	}
 	if req.Username == "" || req.FirstName == "" || req.LastName == "" || req.DateOfBirth == "" {
-		return c.SendStatus(fiber.StatusBadRequest)
+		return fiber.NewError(http.StatusBadRequest, "required fields(username, firstname, lastname, date_of_birth) are empty")
 	}
 
 	userID := ulid.Make().String()
@@ -50,13 +50,13 @@ func appPostUsersFiber(c *fiber.Ctx) error {
 		// 招待する側の招待数をチェック
 		count, _ := getInvCouponCount(*req.InvitationCode)
 		if count >= 3 {
-			return c.SendStatus(fiber.StatusInternalServerError)
+			return fiber.NewError(http.StatusInternalServerError, "この招待コードは使用できません。")
 		}
 
 		// ユーザーチェック
 		inviter, ok := getUserInv(*req.InvitationCode)
 		if !ok {
-			return c.SendStatus(fiber.StatusInternalServerError)
+			return fiber.NewError(http.StatusInternalServerError, "この招待コードは使用できません。")
 		}
 
 		// 招待クーポン付与
@@ -68,34 +68,36 @@ func appPostUsersFiber(c *fiber.Ctx) error {
 
 	createAppAccessToken(accessToken, user)
 	c.Cookie(&fiber.Cookie{
-		// Path:  "/",
+		Path:  "/",
 		Name:  "app_session",
 		Value: accessToken,
 	})
-	return c.Status(fiber.StatusCreated).JSON(&appPostUsersResponse{
+	return c.Status(http.StatusCreated).JSON(&appPostUsersResponse{
 		ID:             userID,
 		InvitationCode: invitationCode,
 	})
 }
 
 func appPostPaymentMethodsFiber(c *fiber.Ctx) error {
+	ctx := c.Context()
 	req := &appPostPaymentMethodsRequest{}
-	if err := c.BodyParser(req); err != nil {
-		return c.SendStatus(fiber.StatusBadRequest)
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.NewError(http.StatusBadRequest, err.Error())
 	}
 	if req.Token == "" {
-		return c.SendStatus(fiber.StatusBadRequest)
+		return fiber.NewError(http.StatusBadRequest, "token is required but was empty")
 	}
 
-	user := c.Locals("user").(*User)
+	user := ctx.UserValue("user").(*User)
 
 	createPaymentToken(user.ID, req.Token)
 
-	return c.SendStatus(fiber.StatusNoContent)
+	return c.SendStatus(http.StatusNoContent)
 }
 
 func appGetRidesFiber(c *fiber.Ctx) error {
-	user := c.Locals("user").(*User)
+	ctx := c.Context()
+	user := ctx.UserValue("user").(*User)
 
 	rideIDs, _ := listRideIDsUserID(user.ID)
 
@@ -131,26 +133,27 @@ func appGetRidesFiber(c *fiber.Ctx) error {
 		items = append(items, item)
 	}
 
-	return c.JSON(&getAppRidesResponse{
+	return c.Status(http.StatusOK).JSON(&getAppRidesResponse{
 		Rides: items,
 	})
 }
 
 func appPostRidesFiber(c *fiber.Ctx) error {
+	ctx := c.Context()
 	req := &appPostRidesRequest{}
-	if err := c.BodyParser(req); err != nil {
-		return c.SendStatus(fiber.StatusBadRequest)
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.NewError(http.StatusBadRequest, err.Error())
 	}
-	// if req.PickupCoordinate == nil || req.DestinationCoordinate == nil {
-	// 	return c.SendStatus(fiber.StatusBadRequest)
-	// }
+	if req.PickupCoordinate == nil || req.DestinationCoordinate == nil {
+		return fiber.NewError(http.StatusBadRequest, "required fields(pickup_coordinate, destination_coordinate) are empty")
+	}
 
-	user := c.Locals("user").(*User)
+	user := ctx.UserValue("user").(*User)
 	rideID := ulid.Make().String()
 
 	isFree, _ := getUserRideStatus(user.ID)
 	if !isFree {
-		return c.SendStatus(fiber.StatusConflict)
+		return fiber.NewError(http.StatusConflict, "ride already exists")
 	}
 	now := time.Now()
 	ride := &Ride{
@@ -164,7 +167,7 @@ func appPostRidesFiber(c *fiber.Ctx) error {
 		UpdatedAt:            now,
 	}
 	createRide(rideID, ride)
-	addRideIDsUserID(user.ID, ride.ID)
+	addRideIDsUserID(user.ID, rideID)
 	waitingRides.Add(ride)
 
 	// 初回利用クーポンは初回に必ず使われるしこれだけでok
@@ -177,50 +180,52 @@ func appPostRidesFiber(c *fiber.Ctx) error {
 
 	processRideStatus(ride, "MATCHING")
 
-	return c.Status(fiber.StatusAccepted).JSON(&appPostRidesResponse{
+	return c.Status(http.StatusAccepted).JSON(&appPostRidesResponse{
 		RideID: rideID,
 		Fare:   fare,
 	})
 }
 
 func appPostRidesEstimatedFareFiber(c *fiber.Ctx) error {
+	ctx := c.Context()
 	req := &appPostRidesEstimatedFareRequest{}
-	if err := c.BodyParser(req); err != nil {
-		return c.SendStatus(fiber.StatusBadRequest)
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.NewError(http.StatusBadRequest, err.Error())
 	}
 	if req.PickupCoordinate == nil || req.DestinationCoordinate == nil {
-		return c.SendStatus(fiber.StatusBadRequest)
+		return fiber.NewError(http.StatusBadRequest, "required fields(pickup_coordinate, destination_coordinate) are empty")
 	}
 
-	user := c.Locals("user").(*User)
+	user := ctx.UserValue("user").(*User)
 
 	discounted := calculateDiscountedFare(user.ID, nil, req.PickupCoordinate.Latitude, req.PickupCoordinate.Longitude, req.DestinationCoordinate.Latitude, req.DestinationCoordinate.Longitude)
 
-	return c.JSON(&appPostRidesEstimatedFareResponse{
+	return c.Status(http.StatusOK).JSON(&appPostRidesEstimatedFareResponse{
 		Fare:     discounted,
 		Discount: calculateFare(req.PickupCoordinate.Latitude, req.PickupCoordinate.Longitude, req.DestinationCoordinate.Latitude, req.DestinationCoordinate.Longitude) - discounted,
 	})
 }
 
 func appPostRideEvaluatationFiber(c *fiber.Ctx) error {
+	ctx := c.Context()
 	rideID := c.Params("ride_id")
 
 	req := &appPostRideEvaluationRequest{}
-	if err := c.BodyParser(req); err != nil {
-		return c.SendStatus(fiber.StatusBadRequest)
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.NewError(http.StatusBadRequest, err.Error())
 	}
 	if req.Evaluation < 1 || req.Evaluation > 5 {
-		return c.SendStatus(fiber.StatusBadRequest)
+		return fiber.NewError(http.StatusBadRequest, "evaluation must be between 1 and 5")
 	}
 
 	ride, ok := getRide(rideID)
 	if !ok {
-		return c.SendStatus(fiber.StatusNotFound)
+		return fiber.NewError(http.StatusNotFound, "ride not found")
 	}
 	status, _ := getLatestRideStatus(ride.ID)
 
 	if status != "ARRIVED" {
-		return c.SendStatus(fiber.StatusBadRequest)
+		return fiber.NewError(http.StatusBadRequest, "not arrived yet")
 	}
 	if ride.ChairID.Valid {
 		addChairStats(ride.ChairID.String, req.Evaluation)
@@ -231,7 +236,7 @@ func appPostRideEvaluatationFiber(c *fiber.Ctx) error {
 
 	token, ok := getPaymentToken(ride.UserID)
 	if !ok {
-		return c.SendStatus(fiber.StatusBadRequest)
+		return fiber.NewError(http.StatusBadRequest, "payment token not registered")
 	}
 
 	fare := calculateDiscountedFare(ride.UserID, ride, ride.PickupLatitude, ride.PickupLongitude, ride.DestinationLatitude, ride.DestinationLongitude)
@@ -239,33 +244,34 @@ func appPostRideEvaluatationFiber(c *fiber.Ctx) error {
 		Amount: fare,
 	}
 
-	if err := requestPaymentGatewayPostPayment(c.Context(), paymentGatewayURL, rideID, token, paymentGatewayRequest); err != nil {
+	if err := requestPaymentGatewayPostPayment(ctx, paymentGatewayURL, rideID, token, paymentGatewayRequest); err != nil {
 		if errors.Is(err, erroredUpstream) {
-			return c.SendStatus(fiber.StatusBadGateway)
-
+			return fiber.NewError(http.StatusBadGateway, err.Error())
 		}
-		return c.SendStatus(fiber.StatusInternalServerError)
+		return fiber.NewError(http.StatusInternalServerError, err.Error())
 	}
 
 	defer processRideStatus(ride, "COMPLETED")
 
-	return c.JSON(&appPostRideEvaluationResponse{
+	return c.Status(http.StatusOK).JSON(&appPostRideEvaluationResponse{
 		CompletedAt: ride.UpdatedAt.UnixMilli(),
 	})
 }
 
 // SSE
 func appGetNotificationFiber(c *fiber.Ctx) error {
-	user := c.Locals("user").(*User)
+	ctx := c.Context()
+	user := ctx.UserValue("user").(*User)
 
-	c.Set("X-Accel-Buffering", "no")
-	c.Set("Content-Type", "text/event-stream")
-	c.Set("Cache-Control", "no-cache")
-	c.Set("Connection", "keep-alive")
+	c.Response().Header.Set("X-Accel-Buffering", "no")
+	c.Response().Header.Set(fiber.HeaderContentType, "text/event-stream")
+	c.Response().Header.Set(fiber.HeaderCacheControl, "no-cache")
+	c.Response().Header.Set(fiber.HeaderConnection, "keep-alive")
 
-	clientGone := c.Context().Done()
+	clientGone := ctx.Done()
+	// rc := http.NewResponseController(w)
 	appChan := getAppChan(user.ID)
-	c.Status(fiber.StatusOK).Context().SetBodyStreamWriter(fasthttp.StreamWriter(func(w *bufio.Writer) {
+	c.Context().SetBodyStreamWriter(fasthttp.StreamWriter(func(w *bufio.Writer) {
 		for {
 			select {
 			case <-clientGone:
@@ -279,17 +285,15 @@ func appGetNotificationFiber(c *fiber.Ctx) error {
 				if err != nil {
 					return
 				}
-				// if _, err := w.Write([]byte("data: ")); err != nil {
-				// 	return
-				// }
-				// if _, err := w.Write(resV); err != nil {
-				// 	return
-				// }
-				// if _, err := w.Write([]byte("\n\n")); err != nil {
-				// 	return
-				// }
-				fmt.Fprintf(w, "data: %s\n\n", string(resV))
-				// fmt.Printf("[DEBUG] Fprintf %s\n", string(resV))
+				if _, err := w.Write([]byte("data: ")); err != nil {
+					return
+				}
+				if _, err := w.Write(resV); err != nil {
+					return
+				}
+				if _, err := w.Write([]byte("\n\n")); err != nil {
+					return
+				}
 				if err := w.Flush(); err != nil {
 					return
 				}
@@ -299,7 +303,6 @@ func appGetNotificationFiber(c *fiber.Ctx) error {
 			}
 		}
 	}))
-
 	return nil
 }
 
@@ -308,24 +311,24 @@ func appGetNearbyChairsFiber(c *fiber.Ctx) error {
 	lonStr := c.Query("longitude")
 	distanceStr := c.Query("distance")
 	if latStr == "" || lonStr == "" {
-		return c.SendStatus(fiber.StatusBadRequest)
+		return fiber.NewError(http.StatusBadRequest, "latitude or longitude is empty")
 	}
 
 	lat, err := strconv.Atoi(latStr)
 	if err != nil {
-		return c.SendStatus(fiber.StatusBadRequest)
+		return fiber.NewError(http.StatusBadRequest, "latitude is invalid")
 	}
 
 	lon, err := strconv.Atoi(lonStr)
 	if err != nil {
-		return c.SendStatus(fiber.StatusBadRequest)
+		return fiber.NewError(http.StatusBadRequest, "longitude is invalid")
 	}
 
 	distance := 50
 	if distanceStr != "" {
 		distance, err = strconv.Atoi(distanceStr)
 		if err != nil {
-			return c.SendStatus(fiber.StatusBadRequest)
+			return fiber.NewError(http.StatusBadRequest, "distance is invalid")
 		}
 	}
 
@@ -358,7 +361,7 @@ func appGetNearbyChairsFiber(c *fiber.Ctx) error {
 		}
 	}
 
-	return c.JSON(&appGetNearbyChairsResponse{
+	return c.Status(http.StatusOK).JSON(&appGetNearbyChairsResponse{
 		Chairs:      nearbyChairs,
 		RetrievedAt: retrievedAt.UnixMilli(),
 	})
