@@ -52,9 +52,10 @@ func internalGetMatchingOutsource() (isNoAgeLimit bool) {
 		return 0
 	})
 	// if rides[0].CreatedAt.After(benchStartedAt.Add(35 * time.Second)) {
-	// 	isNoAgeLimit = true
-	// 	return
-	// }
+	if len(chairs) > 100 {
+		isNoAgeLimit = true
+		return
+	}
 	min := 5 * len(chairs)
 	if len(rides) < min {
 		min = len(rides)
