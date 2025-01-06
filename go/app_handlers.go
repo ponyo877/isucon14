@@ -228,7 +228,7 @@ func appPostRides(w http.ResponseWriter, r *http.Request) {
 		UpdatedAt:            now,
 	}
 	createRide(rideID, ride)
-	addRideIDsUserID(user.ID, ride.ID)
+	addRideIDsUserID(user.ID, rideID)
 	waitingRides.Add(ride)
 
 	// 初回利用クーポンは初回に必ず使われるしこれだけでok

@@ -3,8 +3,6 @@ package main
 import (
 	"sync"
 	"time"
-
-	"github.com/gammazero/deque"
 )
 
 type Notif struct {
@@ -435,39 +433,41 @@ func incInvCouponCount(code string) {
 }
 
 type UnusedCouponAmount struct {
-	cache deque.Deque[int]
-	mu    sync.Mutex
+	list []int
+	head int
+	mu   sync.Mutex
 }
 
 func NewUnusedCouponAmount() *UnusedCouponAmount {
 	return &UnusedCouponAmount{
-		cache: deque.Deque[int]{},
-		mu:    sync.Mutex{},
+		list: []int{},
+		head: 0,
+		mu:   sync.Mutex{},
 	}
 }
 
 func (u *UnusedCouponAmount) Len() int {
 	u.mu.Lock()
 	defer u.mu.Unlock()
-	return u.cache.Len()
+	return len(u.list) - u.head
 }
 
 func (u *UnusedCouponAmount) Add(amount int) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
-	u.cache.PushBack(amount)
+	u.list = append(u.list, amount)
 }
 
 func (u *UnusedCouponAmount) Front() int {
 	u.mu.Lock()
 	defer u.mu.Unlock()
-	return u.cache.Front()
+	return u.list[u.head]
 }
 
-func (u *UnusedCouponAmount) Remove() int {
+func (u *UnusedCouponAmount) Remove() {
 	u.mu.Lock()
 	defer u.mu.Unlock()
-	return u.cache.PopFront()
+	u.head++
 }
 
 func addUnusedCoupon(userID string, amount int) {
@@ -492,12 +492,12 @@ func getUnusedCoupon(userID string) (int, bool) {
 	return unusedCouponAmount.Front(), true
 }
 
-func useUnusedCoupon(userID string) int {
+func useUnusedCoupon(userID string) {
 	unusedCouponAmount := NewUnusedCouponAmount()
 	if tmp, ok := unusedCoupons.Load(userID); ok {
 		unusedCouponAmount = tmp.(*UnusedCouponAmount)
 	}
-	return unusedCouponAmount.Remove()
+	unusedCouponAmount.Remove()
 }
 
 func getRideDiscount(rideID string) (int, bool) {

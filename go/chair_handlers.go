@@ -142,7 +142,8 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	req := &Coordinate{}
 	chairPostCoordinateBindJSON(r, req)
-
+	now := time.Now()
+	chairPostCoordinateWriteJSON(w, now)
 	chair := ctx.Value("chair").(*Chair)
 
 	ride := &Ride{}
@@ -159,10 +160,9 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	id := ulid.Make().String()
-	now := time.Now()
+
 	chairLocation := &ChairLocation{
-		ID:        id,
+		ID:        "dummy",
 		ChairID:   chair.ID,
 		Latitude:  req.Latitude,
 		Longitude: req.Longitude,
@@ -174,8 +174,6 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 		distance := calculateDistance(before.Latitude, before.Longitude, req.Latitude, req.Longitude)
 		createChairTotalDistance(chair.ID, distance, now)
 	}
-
-	chairPostCoordinateWriteJSON(w, now)
 }
 
 type simpleUser struct {
