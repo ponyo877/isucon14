@@ -17,7 +17,6 @@ func abs(a int) int {
 }
 
 func getAppNotification(user *User, ride *Ride, rideStatus string) (*appGetNotificationResponse, error) {
-	fare := calculateDiscountedFare(user.ID, ride, ride.PickupLatitude, ride.PickupLongitude, ride.DestinationLatitude, ride.DestinationLongitude)
 	response := &appGetNotificationResponse{
 		Data: &appGetNotificationResponseData{
 			RideID: ride.ID,
@@ -29,7 +28,7 @@ func getAppNotification(user *User, ride *Ride, rideStatus string) (*appGetNotif
 				Latitude:  ride.DestinationLatitude,
 				Longitude: ride.DestinationLongitude,
 			},
-			Fare:      fare,
+			Fare:      ride.Fare,
 			Status:    rideStatus,
 			CreatedAt: ride.CreatedAt.UnixMilli(),
 			UpdateAt:  ride.UpdatedAt.UnixMilli(),
@@ -62,30 +61,6 @@ func getChairStats(chairID string) appGetNotificationResponseChairStats {
 func calculateFare(pickupLatitude, pickupLongitude, destLatitude, destLongitude int) int {
 	meteredFare := farePerDistance * calculateDistance(pickupLatitude, pickupLongitude, destLatitude, destLongitude)
 	return initialFare + meteredFare
-}
-
-func calculateDiscountedFare(userID string, ride *Ride, pickupLatitude, pickupLongitude, destLatitude, destLongitude int) int {
-	discount := 0
-	if ride != nil {
-		destLatitude = ride.DestinationLatitude
-		destLongitude = ride.DestinationLongitude
-		pickupLatitude = ride.PickupLatitude
-		pickupLongitude = ride.PickupLongitude
-
-		// すでにクーポンが紐づいているならそれの割引額を参照
-		if amount, ok := getRideDiscount(ride.ID); ok {
-			discount = amount
-		}
-	} else {
-		// 初回利用クーポンを最優先で使う
-		if amount, ok := getUnusedCoupon(userID); ok {
-			discount = amount
-		}
-	}
-	meteredFare := farePerDistance * calculateDistance(pickupLatitude, pickupLongitude, destLatitude, destLongitude)
-	discountedMeteredFare := max(meteredFare-discount, 0)
-
-	return initialFare + discountedMeteredFare
 }
 
 func posComma(b []byte) int {

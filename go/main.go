@@ -303,6 +303,13 @@ func postInitialize(c *fiber.Ctx) error {
 		return c.SendStatus(fiber.StatusInternalServerError)
 	}
 	for _, r := range rides {
+		discount := 0
+		if amount, ok := getRideDiscount(r.ID); ok {
+			discount = amount
+		}
+		meteredFare := farePerDistance * calculateDistance(r.PickupLatitude, r.PickupLongitude, r.DestinationLatitude, r.DestinationLongitude)
+		discountedMeteredFare := max(meteredFare-discount, 0)
+		r.Fare = initialFare + discountedMeteredFare
 		createRide(r.ID, &r)
 	}
 	if err := db.GetContext(ctx, &paymentGatewayURL, "SELECT value FROM settings WHERE name = 'payment_gateway_url'"); err != nil {

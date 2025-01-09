@@ -105,13 +105,12 @@ func appGetRides(c *fiber.Ctx) error {
 			continue
 		}
 		ride, _ := getRide(rideID)
-		fare := calculateDiscountedFare(user.ID, ride, ride.PickupLatitude, ride.PickupLongitude, ride.DestinationLatitude, ride.DestinationLongitude)
 
 		item := getAppRidesResponseItem{
 			ID:                    ride.ID,
 			PickupCoordinate:      Coordinate{Latitude: ride.PickupLatitude, Longitude: ride.PickupLongitude},
 			DestinationCoordinate: Coordinate{Latitude: ride.DestinationLatitude, Longitude: ride.DestinationLongitude},
-			Fare:                  fare,
+			Fare:                  ride.Fare,
 			Evaluation:            *ride.Evaluation,
 			RequestedAt:           ride.CreatedAt.UnixMilli(),
 			CompletedAt:           ride.UpdatedAt.UnixMilli(),
@@ -153,6 +152,13 @@ func appPostRides(c *fiber.Ctx) error {
 		return fiber.NewError(http.StatusConflict, "ride already exists")
 	}
 	now := time.Now()
+
+	discount, ok := getUnusedCoupon(user.ID)
+	if ok {
+		useUnusedCoupon(user.ID)
+	}
+	meteredFare := farePerDistance * calculateDistance(req.PickupCoordinate.Latitude, req.PickupCoordinate.Longitude, req.DestinationCoordinate.Latitude, req.DestinationCoordinate.Longitude)
+	discountedMeteredFare := max(meteredFare-discount, 0)
 	ride := &Ride{
 		ID:                   rideID,
 		UserID:               user.ID,
@@ -162,24 +168,17 @@ func appPostRides(c *fiber.Ctx) error {
 		DestinationLongitude: req.DestinationCoordinate.Longitude,
 		CreatedAt:            now,
 		UpdatedAt:            now,
+		Fare:                 initialFare + discountedMeteredFare,
 	}
 	createRide(rideID, ride)
 	addRideIDsUserID(user.ID, rideID)
 	waitingRides.Add(ride)
 
-	// 初回利用クーポンは初回に必ず使われるしこれだけでok
-	if amount, ok := getUnusedCoupon(user.ID); ok {
-		useUnusedCoupon(user.ID)
-		createRideDiscount(rideID, amount)
-	}
-
-	fare := calculateDiscountedFare(user.ID, ride, req.PickupCoordinate.Latitude, req.PickupCoordinate.Longitude, req.DestinationCoordinate.Latitude, req.DestinationCoordinate.Longitude)
-
 	processRideStatus(ride, "MATCHING")
 
 	return c.Status(http.StatusAccepted).JSON(&appPostRidesResponse{
 		RideID: rideID,
-		Fare:   fare,
+		Fare:   ride.Fare,
 	})
 }
 
@@ -195,11 +194,17 @@ func appPostRidesEstimatedFare(c *fiber.Ctx) error {
 
 	user := ctx.UserValue("user").(*User)
 
-	discounted := calculateDiscountedFare(user.ID, nil, req.PickupCoordinate.Latitude, req.PickupCoordinate.Longitude, req.DestinationCoordinate.Latitude, req.DestinationCoordinate.Longitude)
+	discount := 0
+	if amount, ok := getUnusedCoupon(user.ID); ok {
+		discount = amount
+	}
+	meteredFare := farePerDistance * calculateDistance(req.PickupCoordinate.Latitude, req.PickupCoordinate.Longitude, req.DestinationCoordinate.Latitude, req.DestinationCoordinate.Longitude)
+	discountedMeteredFare := max(meteredFare-discount, 0)
+	discounted := initialFare + discountedMeteredFare
 
 	return c.Status(http.StatusOK).JSON(&appPostRidesEstimatedFareResponse{
 		Fare:     discounted,
-		Discount: calculateFare(req.PickupCoordinate.Latitude, req.PickupCoordinate.Longitude, req.DestinationCoordinate.Latitude, req.DestinationCoordinate.Longitude) - discounted,
+		Discount: meteredFare - discountedMeteredFare,
 	})
 }
 
@@ -236,9 +241,8 @@ func appPostRideEvaluatation(c *fiber.Ctx) error {
 		return fiber.NewError(http.StatusBadRequest, "payment token not registered")
 	}
 
-	fare := calculateDiscountedFare(ride.UserID, ride, ride.PickupLatitude, ride.PickupLongitude, ride.DestinationLatitude, ride.DestinationLongitude)
 	paymentGatewayRequest := &paymentGatewayPostPaymentRequest{
-		Amount: fare,
+		Amount: ride.Fare,
 	}
 
 	if err := requestPaymentGatewayPostPayment(ctx, paymentGatewayURL, rideID, token, paymentGatewayRequest); err != nil {
