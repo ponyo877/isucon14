@@ -93,7 +93,7 @@ func chairGetNotification(w http.ResponseWriter, r *http.Request) {
 			if notif.RideStatus == "COMPLETED" {
 				go func() {
 					// evaluationの完了待ち
-					time.Sleep(50 * time.Millisecond)
+					time.Sleep(30 * time.Millisecond)
 					freeChairs.Add(chair)
 					deleteLatestRide(chair.ID)
 				}()

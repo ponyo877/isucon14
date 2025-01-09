@@ -3,7 +3,6 @@ package main
 import (
 	crand "crypto/rand"
 	"fmt"
-	"log"
 	"log/slog"
 	"net"
 	"net/http"
@@ -16,7 +15,6 @@ import (
 
 	"github.com/bytedance/sonic"
 	"github.com/gofiber/fiber/v2"
-	"github.com/kaz/pprotein/integration/standalone"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
@@ -32,9 +30,9 @@ var client pb.SubServiceClient
 var benchStartedAt time.Time
 
 func main() {
-	go func() {
-		standalone.Integrate(":19001")
-	}()
+	// go func() {
+	// 	standalone.Integrate(":19001")
+	// }()
 	mux := setup()
 	muxNotification := setupNotification()
 	go http.ListenAndServe(":8081", muxNotification)
@@ -170,11 +168,11 @@ func postInitialize(c *fiber.Ctx) error {
 	if _, err := db.ExecContext(ctx, "UPDATE settings SET value = ? WHERE name = 'payment_gateway_url'", req.PaymentServer); err != nil {
 		return c.SendStatus(fiber.StatusInternalServerError)
 	}
-	go func() {
-		if _, err := http.Get("http://192.168.0.14:9000/api/group/collect"); err != nil {
-			log.Printf("failed to communicate with pprotein: %v", err)
-		}
-	}()
+	// go func() {
+	// 	if _, err := http.Get("http://192.168.0.14:9000/api/group/collect"); err != nil {
+	// 		log.Printf("failed to communicate with pprotein: %v", err)
+	// 	}
+	// }()
 	initCache()
 
 	chairLocations := []ChairLocation{}
