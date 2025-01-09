@@ -6,19 +6,17 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/bytedance/sonic"
+	"github.com/gofiber/fiber/v2"
 	"github.com/oklog/ulid/v2"
 )
 
-func appPostUsers(w http.ResponseWriter, r *http.Request) {
+func appPostUsers(c *fiber.Ctx) error {
 	req := &appPostUsersRequest{}
-	if err := bindJSON(r, req); err != nil {
-		writeError(w, http.StatusBadRequest, err)
-		return
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.NewError(http.StatusBadRequest, err.Error())
 	}
 	if req.Username == "" || req.FirstName == "" || req.LastName == "" || req.DateOfBirth == "" {
-		writeError(w, http.StatusBadRequest, errors.New("required fields(username, firstname, lastname, date_of_birth) are empty"))
-		return
+		return fiber.NewError(http.StatusBadRequest, "required fields(username, firstname, lastname, date_of_birth) are empty")
 	}
 
 	userID := ulid.Make().String()
@@ -49,15 +47,13 @@ func appPostUsers(w http.ResponseWriter, r *http.Request) {
 		// 招待する側の招待数をチェック
 		count, _ := getInvCouponCount(*req.InvitationCode)
 		if count >= 3 {
-			writeError(w, http.StatusInternalServerError, errors.New("この招待コードは使用できません。"))
-			return
+			return fiber.NewError(http.StatusInternalServerError, "この招待コードは使用できません。")
 		}
 
 		// ユーザーチェック
 		inviter, ok := getUserInv(*req.InvitationCode)
 		if !ok {
-			writeError(w, http.StatusInternalServerError, errors.New("この招待コードは使用できません。"))
-			return
+			return fiber.NewError(http.StatusInternalServerError, "この招待コードは使用できません。")
 		}
 
 		// 招待クーポン付与
@@ -68,39 +64,37 @@ func appPostUsers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	createAppAccessToken(accessToken, user)
-	http.SetCookie(w, &http.Cookie{
+	c.Cookie(&fiber.Cookie{
 		Path:  "/",
 		Name:  "app_session",
 		Value: accessToken,
 	})
-	writeJSON(w, http.StatusCreated, &appPostUsersResponse{
+	return c.Status(http.StatusCreated).JSON(&appPostUsersResponse{
 		ID:             userID,
 		InvitationCode: invitationCode,
 	})
 }
 
-func appPostPaymentMethods(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
+func appPostPaymentMethods(c *fiber.Ctx) error {
+	ctx := c.Context()
 	req := &appPostPaymentMethodsRequest{}
-	if err := bindJSON(r, req); err != nil {
-		writeError(w, http.StatusBadRequest, err)
-		return
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.NewError(http.StatusBadRequest, err.Error())
 	}
 	if req.Token == "" {
-		writeError(w, http.StatusBadRequest, errors.New("token is required but was empty"))
-		return
+		return fiber.NewError(http.StatusBadRequest, "token is required but was empty")
 	}
 
-	user := ctx.Value("user").(*User)
+	user := ctx.UserValue("user").(*User)
 
 	createPaymentToken(user.ID, req.Token)
 
-	w.WriteHeader(http.StatusNoContent)
+	return c.SendStatus(http.StatusNoContent)
 }
 
-func appGetRides(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	user := ctx.Value("user").(*User)
+func appGetRides(c *fiber.Ctx) error {
+	ctx := c.Context()
+	user := ctx.UserValue("user").(*User)
 
 	rideIDs, _ := listRideIDsUserID(user.ID)
 
@@ -136,30 +130,27 @@ func appGetRides(w http.ResponseWriter, r *http.Request) {
 		items = append(items, item)
 	}
 
-	writeJSON(w, http.StatusOK, &getAppRidesResponse{
+	return c.Status(http.StatusOK).JSON(&getAppRidesResponse{
 		Rides: items,
 	})
 }
 
-func appPostRides(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
+func appPostRides(c *fiber.Ctx) error {
+	ctx := c.Context()
 	req := &appPostRidesRequest{}
-	if err := bindJSON(r, req); err != nil {
-		writeError(w, http.StatusBadRequest, err)
-		return
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.NewError(http.StatusBadRequest, err.Error())
 	}
 	if req.PickupCoordinate == nil || req.DestinationCoordinate == nil {
-		writeError(w, http.StatusBadRequest, errors.New("required fields(pickup_coordinate, destination_coordinate) are empty"))
-		return
+		return fiber.NewError(http.StatusBadRequest, "required fields(pickup_coordinate, destination_coordinate) are empty")
 	}
 
-	user := ctx.Value("user").(*User)
+	user := ctx.UserValue("user").(*User)
 	rideID := ulid.Make().String()
 
 	isFree, _ := getUserRideStatus(user.ID)
 	if !isFree {
-		writeError(w, http.StatusConflict, errors.New("ride already exists"))
-		return
+		return fiber.NewError(http.StatusConflict, "ride already exists")
 	}
 	now := time.Now()
 	ride := &Ride{
@@ -186,58 +177,52 @@ func appPostRides(w http.ResponseWriter, r *http.Request) {
 
 	processRideStatus(ride, "MATCHING")
 
-	writeJSON(w, http.StatusAccepted, &appPostRidesResponse{
+	return c.Status(http.StatusAccepted).JSON(&appPostRidesResponse{
 		RideID: rideID,
 		Fare:   fare,
 	})
 }
 
-func appPostRidesEstimatedFare(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
+func appPostRidesEstimatedFare(c *fiber.Ctx) error {
+	ctx := c.Context()
 	req := &appPostRidesEstimatedFareRequest{}
-	if err := bindJSON(r, req); err != nil {
-		writeError(w, http.StatusBadRequest, err)
-		return
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.NewError(http.StatusBadRequest, err.Error())
 	}
 	if req.PickupCoordinate == nil || req.DestinationCoordinate == nil {
-		writeError(w, http.StatusBadRequest, errors.New("required fields(pickup_coordinate, destination_coordinate) are empty"))
-		return
+		return fiber.NewError(http.StatusBadRequest, "required fields(pickup_coordinate, destination_coordinate) are empty")
 	}
 
-	user := ctx.Value("user").(*User)
+	user := ctx.UserValue("user").(*User)
 
 	discounted := calculateDiscountedFare(user.ID, nil, req.PickupCoordinate.Latitude, req.PickupCoordinate.Longitude, req.DestinationCoordinate.Latitude, req.DestinationCoordinate.Longitude)
 
-	writeJSON(w, http.StatusOK, &appPostRidesEstimatedFareResponse{
+	return c.Status(http.StatusOK).JSON(&appPostRidesEstimatedFareResponse{
 		Fare:     discounted,
 		Discount: calculateFare(req.PickupCoordinate.Latitude, req.PickupCoordinate.Longitude, req.DestinationCoordinate.Latitude, req.DestinationCoordinate.Longitude) - discounted,
 	})
 }
 
-func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	rideID := r.PathValue("ride_id")
+func appPostRideEvaluatation(c *fiber.Ctx) error {
+	ctx := c.Context()
+	rideID := c.Params("ride_id")
 
 	req := &appPostRideEvaluationRequest{}
-	if err := bindJSON(r, req); err != nil {
-		writeError(w, http.StatusBadRequest, err)
-		return
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.NewError(http.StatusBadRequest, err.Error())
 	}
 	if req.Evaluation < 1 || req.Evaluation > 5 {
-		writeError(w, http.StatusBadRequest, errors.New("evaluation must be between 1 and 5"))
-		return
+		return fiber.NewError(http.StatusBadRequest, "evaluation must be between 1 and 5")
 	}
 
 	ride, ok := getRide(rideID)
 	if !ok {
-		writeError(w, http.StatusNotFound, errors.New("ride not found"))
-		return
+		return fiber.NewError(http.StatusNotFound, "ride not found")
 	}
 	status, _ := getLatestRideStatus(ride.ID)
 
 	if status != "ARRIVED" {
-		writeError(w, http.StatusBadRequest, errors.New("not arrived yet"))
-		return
+		return fiber.NewError(http.StatusBadRequest, "not arrived yet")
 	}
 	if ride.ChairID.Valid {
 		addChairStats(ride.ChairID.String, req.Evaluation)
@@ -248,8 +233,7 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 
 	token, ok := getPaymentToken(ride.UserID)
 	if !ok {
-		writeError(w, http.StatusBadRequest, errors.New("payment token not registered"))
-		return
+		return fiber.NewError(http.StatusBadRequest, "payment token not registered")
 	}
 
 	fare := calculateDiscountedFare(ride.UserID, ride, ride.PickupLatitude, ride.PickupLongitude, ride.DestinationLatitude, ride.DestinationLongitude)
@@ -259,92 +243,41 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 
 	if err := requestPaymentGatewayPostPayment(ctx, paymentGatewayURL, rideID, token, paymentGatewayRequest); err != nil {
 		if errors.Is(err, erroredUpstream) {
-			writeError(w, http.StatusBadGateway, err)
-			return
+			return fiber.NewError(http.StatusBadGateway, err.Error())
 		}
-		writeError(w, http.StatusInternalServerError, err)
-		return
+		return fiber.NewError(http.StatusInternalServerError, err.Error())
 	}
 
 	defer processRideStatus(ride, "COMPLETED")
 
-	writeJSON(w, http.StatusOK, &appPostRideEvaluationResponse{
+	return c.Status(http.StatusOK).JSON(&appPostRideEvaluationResponse{
 		CompletedAt: ride.UpdatedAt.UnixMilli(),
 	})
 }
 
-// SSE
-func appGetNotification(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	user := ctx.Value("user").(*User)
-
-	w.Header().Set("X-Accel-Buffering", "no")
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-
-	clientGone := ctx.Done()
-	rc := http.NewResponseController(w)
-	appChan := getAppChan(user.ID)
-	for {
-		select {
-		case <-clientGone:
-			return
-		case notif := <-appChan:
-			response, err := getAppNotification(user, notif.Ride, notif.RideStatus)
-			if err != nil {
-				return
-			}
-			resV, err := sonic.Marshal(response.Data)
-			if err != nil {
-				return
-			}
-			if _, err := w.Write([]byte("data: ")); err != nil {
-				return
-			}
-			if _, err := w.Write(resV); err != nil {
-				return
-			}
-			if _, err := w.Write([]byte("\n\n")); err != nil {
-				return
-			}
-			if err := rc.Flush(); err != nil {
-				return
-			}
-			if notif.RideStatus == "COMPLETED" {
-				deleteLatestRide(notif.Ride.ChairID.String)
-			}
-		}
-	}
-}
-
-func appGetNearbyChairs(w http.ResponseWriter, r *http.Request) {
-	latStr := r.URL.Query().Get("latitude")
-	lonStr := r.URL.Query().Get("longitude")
-	distanceStr := r.URL.Query().Get("distance")
+func appGetNearbyChairs(c *fiber.Ctx) error {
+	latStr := c.Query("latitude")
+	lonStr := c.Query("longitude")
+	distanceStr := c.Query("distance")
 	if latStr == "" || lonStr == "" {
-		writeError(w, http.StatusBadRequest, errors.New("latitude or longitude is empty"))
-		return
+		return fiber.NewError(http.StatusBadRequest, "latitude or longitude is empty")
 	}
 
 	lat, err := strconv.Atoi(latStr)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, errors.New("latitude is invalid"))
-		return
+		return fiber.NewError(http.StatusBadRequest, "latitude is invalid")
 	}
 
 	lon, err := strconv.Atoi(lonStr)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, errors.New("longitude is invalid"))
-		return
+		return fiber.NewError(http.StatusBadRequest, "longitude is invalid")
 	}
 
 	distance := 50
 	if distanceStr != "" {
 		distance, err = strconv.Atoi(distanceStr)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, errors.New("distance is invalid"))
-			return
+			return fiber.NewError(http.StatusBadRequest, "distance is invalid")
 		}
 	}
 
@@ -377,7 +310,7 @@ func appGetNearbyChairs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, http.StatusOK, &appGetNearbyChairsResponse{
+	return c.Status(http.StatusOK).JSON(&appGetNearbyChairsResponse{
 		Chairs:      nearbyChairs,
 		RetrievedAt: retrievedAt.UnixMilli(),
 	})

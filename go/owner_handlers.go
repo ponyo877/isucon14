@@ -1,23 +1,21 @@
 package main
 
 import (
-	"errors"
 	"net/http"
 	"strconv"
 	"time"
 
+	"github.com/gofiber/fiber/v2"
 	"github.com/oklog/ulid/v2"
 )
 
-func ownerPostOwners(w http.ResponseWriter, r *http.Request) {
+func ownerPostOwners(c *fiber.Ctx) error {
 	req := &ownerPostOwnersRequest{}
-	if err := bindJSON(r, req); err != nil {
-		writeError(w, http.StatusBadRequest, err)
-		return
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.NewError(http.StatusBadRequest, err.Error())
 	}
 	if req.Name == "" {
-		writeError(w, http.StatusBadRequest, errors.New("some of required fields(name) are empty"))
-		return
+		return fiber.NewError(http.StatusBadRequest, "some of required fields(name) are empty")
 	}
 
 	ownerID := ulid.Make().String()
@@ -36,39 +34,37 @@ func ownerPostOwners(w http.ResponseWriter, r *http.Request) {
 	createOwner(ownerID, owner)
 	createOwnerChairRegisterToken(chairRegisterToken, owner)
 
-	http.SetCookie(w, &http.Cookie{
+	c.Cookie(&fiber.Cookie{
 		Path:  "/",
 		Name:  "owner_session",
 		Value: accessToken,
 	})
 
-	writeJSON(w, http.StatusCreated, &ownerPostOwnersResponse{
+	return c.Status(http.StatusCreated).JSON(&ownerPostOwnersResponse{
 		ID:                 ownerID,
 		ChairRegisterToken: chairRegisterToken,
 	})
 }
 
-func ownerGetSales(w http.ResponseWriter, r *http.Request) {
+func ownerGetSales(c *fiber.Ctx) error {
 	since := time.Unix(0, 0)
 	until := time.Date(9999, 12, 31, 23, 59, 59, 0, time.UTC)
-	if r.URL.Query().Get("since") != "" {
-		parsed, err := strconv.ParseInt(r.URL.Query().Get("since"), 10, 64)
+	if c.Query("since") != "" {
+		parsed, err := strconv.ParseInt(c.Query("since"), 10, 64)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, err)
-			return
+			return fiber.NewError(http.StatusBadRequest, err.Error())
 		}
 		since = time.UnixMilli(parsed)
 	}
-	if r.URL.Query().Get("until") != "" {
-		parsed, err := strconv.ParseInt(r.URL.Query().Get("until"), 10, 64)
+	if c.Query("until") != "" {
+		parsed, err := strconv.ParseInt(c.Query("until"), 10, 64)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, err)
-			return
+			return fiber.NewError(http.StatusBadRequest, err.Error())
 		}
 		until = time.UnixMilli(parsed)
 	}
 
-	owner := r.Context().Value("owner").(*Owner)
+	owner := c.Context().UserValue("owner").(*Owner)
 
 	chairs, _ := getChairsOwnerID(owner.ID)
 	res := ownerGetSalesResponse{
@@ -113,12 +109,12 @@ func ownerGetSales(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	res.Models = models
-	writeJSON(w, http.StatusOK, res)
+	return c.Status(http.StatusOK).JSON(res)
 }
 
-func ownerGetChairs(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	owner := ctx.Value("owner").(*Owner)
+func ownerGetChairs(c *fiber.Ctx) error {
+	ctx := c.Context()
+	owner := ctx.UserValue("owner").(*Owner)
 
 	chairs, _ := getChairsOwnerID(owner.ID)
 	res := ownerGetChairResponse{}
@@ -138,5 +134,5 @@ func ownerGetChairs(w http.ResponseWriter, r *http.Request) {
 		}
 		res.Chairs = append(res.Chairs, c)
 	}
-	writeJSON(w, http.StatusOK, res)
+	return c.Status(http.StatusOK).JSON(res)
 }

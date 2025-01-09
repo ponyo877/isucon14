@@ -27,8 +27,6 @@ func requestPaymentGatewayPostPayment(ctx context.Context, paymentGatewayURL str
 		return err
 	}
 
-	// 失敗したらとりあえずリトライ
-	// FIXME: 社内決済マイクロサービスのインフラに異常が発生していて、同時にたくさんリクエストすると変なことになる可能性あり
 	retry := 0
 	for {
 		err := func() error {
@@ -48,7 +46,6 @@ func requestPaymentGatewayPostPayment(ctx context.Context, paymentGatewayURL str
 
 			if res.StatusCode != http.StatusNoContent {
 				return fmt.Errorf("unexpected status code (%d)", res.StatusCode)
-				// エラーが返ってきても成功している場合があるので、社内決済マイクロサービスに問い合わせ
 			}
 			return nil
 		}()
